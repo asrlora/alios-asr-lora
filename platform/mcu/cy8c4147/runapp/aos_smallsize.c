@@ -75,8 +75,6 @@ static void sys_init(void)
 
     while(1)
     {
-    //    printf_std("hello world!\r\n");
-  //      UART_API(_UartPutString("hello\r\n"));
         krhino_task_sleep(RHINO_CONFIG_TICKS_PER_SECOND*10);
     }
 }
@@ -87,27 +85,24 @@ static void sys_start(void)
     aos_init();
 
     SpiInit();
-#if 1
-    CySysTickStart();
      /* Configure SysTick timer to generate interrupt every 1 ms */
+    CySysTickStart();
     CySysTickSetReload(CYDEV_BCLK__SYSCLK__HZ/RHINO_CONFIG_TICKS_PER_SECOND);
     CyIntSetSysVector(CY_INT_PEND_SV_IRQN, PendSV_Handler);
     CySysTickEnable();
     CySysTickSetCallback(0, SysTick_IRQ);
-    CySysTickSetCallback(1,SysTickIsrHandler);
-#else
-    CySysTickInit();
-    CySysTickSetReload(CYDEV_BCLK__SYSCLK__HZ/RHINO_CONFIG_TICKS_PER_SECOND);
-    CyIntSetSysVector(CY_INT_PEND_SV_IRQN, PendSV_Handler);
-    CySysTickEnable();
-    CySysTickSetCallback(0, SysTick_IRQ);
-#endif
-         
-     /* Starts RTC component */
+    /* set wco */
+    CySysClkSetTimerSource(CY_SYS_CLK_TIMER_SRC_WCO);
+    CySysTimerDisable(CY_SYS_TIMER2_MASK);
+    CySysTimerResetCounters(CY_SYS_TIMER2_MASK);
+    CySysTimerSetToggleBit(3);//0~31
+    CySysTimerSetInterruptCallback(2, Timer2_ISR);
+    CySysTimerEnableIsr(2);
+    CySysTimerSetMode(2, CY_SYS_TIMER_MODE_INT);
+    CySysTimerEnable(CY_SYS_TIMER2_MASK);
     RTC_Start();
-    /* Set RTC time update period */
-    RTC_SetPeriod(1u, RHINO_CONFIG_TICKS_PER_SECOND);
-    
+    g_rtc_period = (32768 / (1 << CySysTimerGetToggleBit()));
+    RTC_SetPeriod(1u, g_rtc_period);
         
     stat = krhino_task_dyn_create(&g_aos_init, "aos-init", 0, AOS_DEFAULT_APP_PRI, 0, AOS_START_STACK, (task_entry_t)sys_init, 1);
     if(stat != RHINO_SUCCESS)

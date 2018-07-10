@@ -64,7 +64,7 @@ extern "C" {
 /* Exported macros -----------------------------------------------------------*/
 #ifdef CONFIG_DEBUG_LINKWAN
     #define PRINTF printf
-    #define DBG_PRINTF(format, ...)    do {printf("[%d][%s:%4d] " format "", krhino_sys_time_get(), __FILE__, __LINE__, ##__VA_ARGS__);}while(0)
+    #define DBG_PRINTF(format, ...)    do {printf("[%d]" format "", get_current_time(), ##__VA_ARGS__);}while(0)
     #define PRINTF_RAW printf
     #define DBG_PRINTF_CRITICAL 
 #endif

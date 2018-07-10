@@ -527,7 +527,6 @@ bool RegionCN470ARxConfig( RxConfigParams_t *rxConfig, int8_t *datarate )
                            rxConfig->RxContinuous );
     } else {
         modem = MODEM_LORA;
-        rxConfig->WindowTimeout = 0;
 	Radio.SetRxConfig( modem, rxConfig->Bandwidth, phyDr, 1, 0, 8, rxConfig->WindowTimeout, false, 0, false, 0, 0,
                            iqInverted, rxConfig->RxContinuous );
     }

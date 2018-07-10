@@ -10,6 +10,8 @@
 #include "RegionCN470A.h"
 #include "timeServer.h"
 #include "radio.h"
+#include <uart_port.h>
+#include "hal/soc/uart.h"
 #ifdef AOS_KV
 #include <assert.h>
 #include "kvmgr.h"
@@ -437,7 +439,24 @@ static void print_dev_addr(void)
     DBG_LINKWAN("freq type %s\r\n", g_freq_type == FREQ_TYPE_INTER ? "inter" : "intra");
     DBG_LINKWAN("scan chn mask 0x%04x\r\n", g_lora_dev.mask);
 }
-
+#ifdef CONSOLE_LOG_BUFFER
+void log_printf(void)
+{
+    extern struct circ_buf log_cb;
+    int count;
+    if (CIRC_CNT(log_cb.head, log_cb.tail, UART_CONSOLE_SIZE) > 0) {
+        count = MIN(CIRC_CNT(log_cb.head, log_cb.tail, UART_CONSOLE_SIZE), UART_CONSOLE_SIZE - log_cb.tail);
+        extern uart_dev_t uart_0;;
+        hal_uart_send(&uart_0, log_cb.buf + log_cb.tail, count, count * 300);
+        log_cb.tail = (log_cb.tail + count) & (UART_CONSOLE_SIZE - 1);
+        count = CIRC_CNT(log_cb.head, log_cb.tail, UART_CONSOLE_SIZE);
+        if (count > 0) {
+            hal_uart_send(&uart_0, log_cb.buf+ log_cb.tail, count, count * 300);
+            log_cb.tail = (log_cb.tail + count) & (UART_CONSOLE_SIZE - 1);
+        }
+    }
+}
+#endif
 void lora_fsm( void )
 {
 #ifdef CONFIG_LINKWAN
@@ -452,7 +471,9 @@ void lora_fsm( void )
         extern void process_linkwan_at(void);
         process_linkwan_at();
 #endif
-
+#ifdef CONSOLE_LOG_BUFFER
+        log_printf();
+#endif
         switch (device_state) {
             case DEVICE_STATE_INIT: {
 #ifdef AOS_KV

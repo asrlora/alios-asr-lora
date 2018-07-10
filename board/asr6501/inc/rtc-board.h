@@ -25,8 +25,8 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-void SysTickIsrHandler(void);
-
+void Timer2_ISR(void);
+uint32_t g_rtc_period;
 /*!
  * \brief Timer time variable definition
  */
