@@ -3,10 +3,9 @@
   <block name="uart_rts" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
   <block name="set_a" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
   <block name="aux1" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
+  <block name="nss" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
   <block name="SPI_BUSY" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
   <block name="SPI_NRESET" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
-  <block name="ext_reset" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
-  <block name="set_b" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
   <block name="DMAC" BASE="0x0" SIZE="0x0" desc="DMAC Registers" visible="true" hidden="false">
     <register name="DMAC_CH_CTL17" address="0x40000000" bitWidth="32" desc="DMA channel 17 control register" hidden="true">
       <field name="ENABLED" from="31" to="31" access="RW" resetVal="" desc="Channel enable control." hidden="false">
@@ -1391,7 +1390,7 @@
   <block name="antpow" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
   <block name="GlobalSignal_1" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
   <block name="cy_boot" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
-  <block name="nss" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
+  <block name="uart_cts" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
   <block name="wakeup_pin" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
   <block name="I2C_1" BASE="0x0" SIZE="0x0" desc="Serial Communication Block" visible="true" hidden="false">
     <block name="sclk_s_VM" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
@@ -2126,23 +2125,24 @@
       <field name="WOUND_RESOLUTION" from="1" to="0" access="R" resetVal="" desc="Maximum SAR resolution allowed" hidden="false" />
     </register>
   </block>
-  <block name="SCB0" BASE="0x0" SIZE="0x0" desc="Serial Communication Block" visible="true" hidden="false">
+  <block name="UART_1" BASE="0x0" SIZE="0x0" desc="Serial Communication Block" visible="true" hidden="false">
+    <block name="RX_WAKEUP_IRQ" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
+    <block name="rx_wake_VM" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
     <block name="sclk_s_VM" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
     <block name="clock_VM" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
-    <block name="miso_m_VM" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
-    <block name="mosi_s_VM" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
     <block name="select_s_VM" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
     <block name="SCBCLK" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
-    <block name="rx_wake_VM" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
+    <block name="rx_wake" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
     <block name="rx_VM" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
+    <block name="mosi_s_VM" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
     <block name="cts_VM" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
-    <block name="rx" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
+    <block name="SCB_IRQ" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
     <block name="Device_VM4" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
     <block name="SCB" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
-    <block name="ZeroTerminal_7" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
     <block name="tx" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
-    <block name="SCB_IRQ" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
+    <block name="miso_m_VM" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
     <block name="or_sclk" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
+    <block name="ZeroTerminal_7" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
     <register name="_CTRL" address="0x40250000" bitWidth="32" desc="Generic control register" hidden="false">
       <field name="OVS" from="3" to="0" access="RW" resetVal="" desc="Serial interface bit period oversampling factor expressed in lP clock cycles. Used for SPI and UART functionality. OVS + 1 IP clock cycles constitute a single serial interface clock/bit cycle." hidden="false" />
       <field name="EC_AM_MODE" from="8" to="8" access="RW" resetVal="" desc="Internally clocked mode ('0') or externally clocked mode ('1') address matching (I2C) or selection (SPI).In internally clocked mode, the serial interface protocols run off the peripheral clock. In externally clocked mode, the serial interface protocols run off the clock as provided by the serial interface." hidden="false" />
@@ -2818,12 +2818,11 @@
       <field name="BREAK_DETECT" from="11" to="11" access="RW" resetVal="" desc="Logical and of corresponding request and mask bits" hidden="false" />
     </register>
   </block>
-  <block name="isr_pin" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
-  <block name="adc_in" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
+  <block name="set_b" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
+  <block name="dio1" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
   <block name="wco_out" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
   <block name="wco_in" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
-  <block name="uart_cts" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
+  <block name="adc_in" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
   <block name="RTC" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
   <block name="lora_irq" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
-  <block name="dio1" BASE="0x0" SIZE="0x0" desc="" visible="true" hidden="false" />
 </blockRegMap>

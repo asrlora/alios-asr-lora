@@ -1042,6 +1042,16 @@ typedef struct sMlmeConfirm {
      * Status of the operation
      */
     LoRaMacEventInfoStatus_t Status;
+#ifdef CONFIG_LINKWAN
+    /*!
+     * Rssi of the received packet
+     */
+    int16_t Rssi;
+    /*!
+     * Snr of the received packet
+     */
+    int8_t Snr;
+#endif
     /*!
      * The transmission time on air of the frame
      */

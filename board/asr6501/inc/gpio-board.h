@@ -81,4 +81,5 @@ void GpioMcuToggle( Gpio_t *obj );
  */
 uint32_t GpioMcuRead( Gpio_t *obj );
 
+void RegisterGpioCallback(Gpio_t *obj, GpioIoeIrqHandler GpioIrqCallback);
 #endif // __GPIO_BOARD_H__

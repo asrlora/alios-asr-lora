@@ -11,11 +11,9 @@ $(NAME)_SOURCES := lora/system/crypto/aes.c                \
                    lora/mac/region/RegionCommon.c   \
                    lora/mac/LoRaMac.c               \
                    lora/mac/LoRaMacCrypto.c    \
-                   ../../../device/lora/eml3047_lrwan/eml3047.c    \
                    ../../../device/lora/sx1276/sx1276.c
 
 GLOBAL_INCLUDES +=  . \
-                    ../../../device/lora/eml3047_lrwan    \
                     ../../../device/lora/sx1276   \
                     lora/system/crypto \
                     lora/radio       \
@@ -23,31 +21,24 @@ GLOBAL_INCLUDES +=  . \
                     lora/mac/region  \
                     lora/system
 
-$(NAME)_INCLUDES := \
-../../../board/eml3047/inc \
-../../../platform/mcu/stm32l0xx/Drivers/STM32L0xx_HAL_Driver/Inc \
-../../../platform/mcu/stm32l0xx/Drivers/STM32L0xx_HAL_Driver/Inc/Legacy \
-../../../platform/mcu/stm32l0xx/Drivers/CMSIS/Device/ST/STM32L0xx/Include \
-../../../platform/mcu/stm32l0xx/Drivers/CMSIS/Include
+linkwan?=0
+ifeq ($(linkwan), 1)
+GLOBAL_DEFINES += CONFIG_LINKWAN
+GLOBAL_DEFINES += CONFIG_DEBUG_LINKWAN
+GLOBAL_DEFINES += CONFIG_AOS_DISABLE_TICK
+GLOBAL_DEFINES += REGION_CN470A
+$(NAME)_SOURCES += linkwan/region/RegionCN470A.c
+$(NAME)_SOURCES += linkwan/linkwan.c
 
-$(NAME)_DEFINES := \
-USE_HAL_DRIVER \
-STM32L071xx
+GLOBAL_INCLUDES += linkwan/include
+GLOBAL_INCLUDES += linkwan/region
 
-linklora?=0
-ifeq ($(linklora), 1)
-GLOBAL_DEFINES += CONFIG_LINKLORA
-GLOBAL_DEFINES += CONFIG_DEBUG_LINKLORA
-$(NAME)_SOURCES += linklora/region/RegionCN470S.c
-$(NAME)_SOURCES += linklora/linklora.c
-
-GLOBAL_INCLUDES +=  linklora
-GLOBAL_INCLUDES +=  linklora/region
-
-linkloratest?=0
-ifeq ($(linkloratest), 1)
-GLOBAL_DEFINES += CONFIG_LINKLORA_TEST
-$(NAME)_SOURCES += linklora/linklora_test.c
+linkwanat ?= 0
+ifeq ($(linkwanat), 1)
+GLOBAL_DEFINES += CONFIG_LINKWAN_AT
+GLOBAL_DEFINES += LOW_POWER_DISABLE
+$(NAME)_SOURCES += linkwan/linkwan_ica_at.c
+#$(NAME)_SOURCES += linkwan/linkwan_at.c
 endif
 else
 $(NAME)_SOURCES += lora/mac/region/RegionAS923.c    \

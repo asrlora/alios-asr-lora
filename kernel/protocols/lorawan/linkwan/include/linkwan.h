@@ -13,17 +13,21 @@
 #define LORAWAN_CONFIRMED_MSG ENABLE
 #define JOINREQ_NBTRIALS 3
 
+typedef enum eJoinModeType
+{
+    JOIN_MODE_OTAA,
+    JOIN_MODE_ABP
+} JoinMode_t;
 typedef enum node_mode_s {
     NODE_MODE_NORMAL = 0,
     NODE_MODE_REPEATER = 1,  // Alibaba Node Repeater
     NODE_MODE_AUTOSWITCH = 2,  // switch between normal and repeater
 } node_mode_t;
 
-typedef enum node_freq_type_s {
-    FREQ_TYPE_INTER = 0,  // uplink and downlink use different frequencies
-    FREQ_TYPE_INTRA = 1,  // uplink and downlink use same frequencies
-    FREQ_TYPE_MAX,
-} node_freq_type_t;
+typedef enum node_freq_mode_s {
+    FREQ_MODE_INTRA = 1,  // uplink and downlink use same frequencies
+    FREQ_MODE_INTER = 2,  // uplink and downlink use different frequencies
+} node_freq_mode_t;
 
 typedef enum {
     VALID_LORA_CONFIG = 0xbeef,
@@ -40,11 +44,20 @@ typedef struct lora_dev_s {
     uint8_t dev_eui[8];
     uint8_t app_eui[8];
     uint8_t app_key[16];
+    int8_t freqband;
+    int8_t datarate;
     int8_t class;
     uint8_t mode;  // normal or repeater
     uint16_t mask;
     uint16_t flag;
-} lora_dev_t;
+    uint16_t crc;
+} __attribute__((packed)) lora_dev_t;
+typedef struct lora_abp_id_s {
+    uint8_t devaddr[4];
+    uint8_t appskey[16];
+    uint8_t nwkskey[16];
+    uint16_t flag;
+} lora_abp_id_t;
 
 typedef enum join_method_s {
     STORED_JOIN_METHOD = 0,
@@ -88,6 +101,7 @@ typedef struct sLoRaParam {
     int8_t TxDatarate;
     bool EnablePublicNetwork;
     uint8_t NbTrials;
+    JoinMode_t JoinMode;
 } LoRaParam_t;
 
 typedef enum eDevicState {
@@ -100,6 +114,17 @@ typedef enum eDevicState {
     DEVICE_STATE_SLEEP
 } DeviceState_t;
 
+typedef enum eDeviceStatus {
+    DEVICE_STATUS_IDLE,//0
+    DEVICE_STATUS_SENDING,
+    DEVICE_STATUS_SEND_FAIL,
+    DEVICE_STATUS_SEND_PASS,
+    DEVICE_STATUS_JOIN_PASS,
+    DEVICE_STATUS_JOIN_FAIL,
+    DEVICE_STATUS_NETWORK_ABNORMAL,
+    DEVICE_STATUS_SEND_PASS_WITHOUT_DL,
+    DEVICE_STATUS_SEND_PASS_WITH_DL,
+} DeviceStatus_t;
 bool set_lora_freqband_mask(uint16_t mask);
 uint16_t get_lora_freqband_mask(void);
 
@@ -107,7 +132,8 @@ bool set_lora_dev_eui(uint8_t *eui);
 bool set_lora_app_eui(uint8_t *eui);
 bool set_lora_app_key(uint8_t *key);
 
-node_freq_type_t get_lora_freq_type(void);
+node_freq_mode_t get_lora_freq_mode(void);
+bool set_lora_freq_mode(node_freq_mode_t mode);
 bool set_lora_tx_datarate(int8_t datarate);
 int8_t get_lora_tx_datarate(void);
 
@@ -128,10 +154,12 @@ bool set_lora_state(DeviceState_t state);
 bool set_lora_tx_dutycycle(uint32_t dutycycle);
 uint32_t get_lora_tx_dutycycle(void);
 
+lora_AppData_t *get_lora_tx_data(void);
 bool tx_lora_data(void);
-lora_AppData_t *get_lora_data(void);
+lora_AppData_t *get_lora_rx_data(void);
 void tx_lora_mac_req(void);
 
+int get_device_status(void);
 // for linkWAN test
 bool set_lora_tx_len(uint16_t len);
 uint8_t get_lora_tx_len(void);
@@ -147,12 +175,19 @@ bool get_lora_debug(void);
 bool set_lora_active_mode(bool active_mode);
 bool get_lora_active_mode(void);
 
-bool set_lora_abp_devaddr(uint32_t devaddr);
-uint32_t get_lora_abp_devaddr(void);
+uint8_t *get_lora_devaddr(void);
+bool set_lora_devaddr(uint8_t *devaddr);
 
-bool set_lora_abp_nwkskey(uint8_t *nwkskey, uint8_t len);
-uint8_t *get_lora_abp_nwkskey(void);
+uint8_t *get_lora_appskey(void);
+bool set_lora_appskey(uint8_t *buf);
 
-bool set_lora_abp_appskey(uint8_t *appskey, uint8_t len);
-uint8_t *get_lora_abp_appskey(void);
+uint8_t *get_lora_nwkskey(void);
+bool set_lora_nwkskey(uint8_t *buf);
+uint8_t get_lora_app_port(void);
+bool set_lora_app_port(uint8_t port);
+
+DeviceStatus_t get_lora_device_status(void);
+bool set_lora_device_status(DeviceStatus_t ds);
+
+bool lora_tx_data_payload(uint8_t confirm, uint8_t Nbtrials, uint8_t *payload, uint8_t len);
 #endif /* LINKWAN_H */

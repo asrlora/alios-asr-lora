@@ -84,8 +84,13 @@ void GpioMcuInit( Gpio_t *obj, PinNames pin, PinModes mode, PinConfigs config, P
 void GpioMcuSetInterrupt( Gpio_t *obj, IrqModes irqMode, IrqPriorities irqPriority, GpioIrqHandler *irqHandler )
 {
     //    obj->pin  todo...........
-    if (obj->pin == DIO1_PIN)
-        lora_irq_StartEx(irqHandler);
+    static uint8 g_lora_irq_init = 0;
+    RegisterGpioCallback(obj, irqHandler);
+    if (g_lora_irq_init == 0) {
+        extern void GpioIsrEntry (void);
+        lora_irq_StartEx(GpioIsrEntry);
+        g_lora_irq_init = 1;
+    }
 }
 
 void GpioMcuRemoveInterrupt( Gpio_t *obj )

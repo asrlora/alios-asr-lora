@@ -11,13 +11,14 @@
 #include "hw_conf.h"
 #include "spi.h"
 #include "rtc-board.h"
+#include "asr_timer.h"
 
 #ifdef CERTIFICATION
 #define AOS_START_STACK 256
 #else
 #define AOS_START_STACK 512
 #endif
-
+uint32_t setb_pin;
 ktask_t *g_aos_init;
 aos_task_t task;
 static kinit_t kinit;
@@ -83,6 +84,7 @@ static void sys_start(void)
 {
     kstat_t stat;    
     aos_init();
+    setb_pin = set_b_PC;
 
     SpiInit();
      /* Configure SysTick timer to generate interrupt every 1 ms */
@@ -92,18 +94,18 @@ static void sys_start(void)
     CySysTickEnable();
     CySysTickSetCallback(0, SysTick_IRQ);
     /* set wco */
-    CySysClkSetTimerSource(CY_SYS_CLK_TIMER_SRC_WCO);
+    Asr_Timer_Init();
     CySysTimerDisable(CY_SYS_TIMER2_MASK);
     CySysTimerResetCounters(CY_SYS_TIMER2_MASK);
     CySysTimerSetToggleBit(3);//0~31
-    CySysTimerSetInterruptCallback(2, Timer2_ISR);
+    CySysTimerSetInterruptCallback(2, RTC_Update_ASR);
     CySysTimerEnableIsr(2);
     CySysTimerSetMode(2, CY_SYS_TIMER_MODE_INT);
     CySysTimerEnable(CY_SYS_TIMER2_MASK);
     RTC_Start();
     g_rtc_period = (32768 / (1 << CySysTimerGetToggleBit()));
     RTC_SetPeriod(1u, g_rtc_period);
-        
+
     stat = krhino_task_dyn_create(&g_aos_init, "aos-init", 0, AOS_DEFAULT_APP_PRI, 0, AOS_START_STACK, (task_entry_t)sys_init, 1);
     if(stat != RHINO_SUCCESS)
     {

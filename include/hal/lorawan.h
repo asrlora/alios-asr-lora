@@ -54,6 +54,15 @@ typedef struct
     uint16_t (*radio_rw)(uint16_t tx_data);  
 } hal_lrwan_radio_ctrl_t;
 
+/* LoraWan manufactory interface*/
+typedef struct {
+     char *(*get_mft_id)(void);
+     char *(*get_mft_model)(void);
+     char *(*get_mft_rev)(void);
+     char * (*get_mft_sn)(void);
+     bool (*set_mft_baud)(uint32_t baud);
+     uint32_t (*get_mft_baud)(void);
+} hal_manufactory_itf_t;
 #ifdef __cplusplus
 }
 #endif

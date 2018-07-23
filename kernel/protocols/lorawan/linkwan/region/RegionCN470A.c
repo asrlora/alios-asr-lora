@@ -501,7 +501,7 @@ bool RegionCN470ARxConfig( RxConfigParams_t *rxConfig, int8_t *datarate )
     }
 
     if (rxConfig->Window == 1) {
-        if (get_lora_freq_type() == FREQ_TYPE_INTER) {
+        if (get_lora_freq_mode() == FREQ_MODE_INTER) {
             frequency = 470300000 + (InterFreqRx2Chan[TxFreqBandNum]) * 200000;
         } else {
             frequency = 470300000 + (IntraFreqRx2Chan[TxFreqBandNum]) * 200000;
@@ -527,7 +527,7 @@ bool RegionCN470ARxConfig( RxConfigParams_t *rxConfig, int8_t *datarate )
                            rxConfig->RxContinuous );
     } else {
         modem = MODEM_LORA;
-	Radio.SetRxConfig( modem, rxConfig->Bandwidth, phyDr, 1, 0, 8, rxConfig->WindowTimeout, false, 0, false, 0, 0,
+        Radio.SetRxConfig( modem, rxConfig->Bandwidth, phyDr, 1, 0, 8, rxConfig->WindowTimeout, false, 0, false, 0, 0,
                            iqInverted, rxConfig->RxContinuous );
     }
 
@@ -920,7 +920,7 @@ bool RegionCN470ANextChannel( NextChanParams_t *nextChanParams, uint8_t *channel
         }
     }
 
-    if (get_lora_freq_type() == FREQ_TYPE_INTER) {
+    if (get_lora_freq_mode() == FREQ_MODE_INTER) {
         if (FreqBandNum[NextAvailableFreqBandIdx] > 7) {
             RxFreqBandNum = TxFreqBandNum - 8;
         } else {
@@ -931,26 +931,10 @@ bool RegionCN470ANextChannel( NextChanParams_t *nextChanParams, uint8_t *channel
     }
 
     nextChanParams->freqband = TxFreqBandNum;
-#if 1
-    extern bool g_lora_active_mode;
-    if (g_lora_active_mode == 1) {
-        nextChanParams->NextAvailableRxFreqBandNum = RxFreqBandNum;
-        nextChanParams->NextAvailableTxFreqBandNum = TxFreqBandNum;
-    } else {
-        //for ABP using 1A2 gateway
-        nextChanParams->NextAvailableRxFreqBandNum = 1;
-        nextChanParams->NextAvailableTxFreqBandNum = 1;
-    }
-#else
-#if (OVER_THE_AIR_ACTIVATION != 0)
+
     nextChanParams->NextAvailableRxFreqBandNum = RxFreqBandNum;
     nextChanParams->NextAvailableTxFreqBandNum = TxFreqBandNum;
-#else
-    //for ABP using 1A2 gateway
-    nextChanParams->NextAvailableRxFreqBandNum = 1;
-    nextChanParams->NextAvailableTxFreqBandNum = 1;
-#endif
-#endif
+
 
     //update the freq due to the change of FreqBand Num
     for ( uint8_t i = 0; i < CN470A_MAX_NB_CHANNELS; i++ ) {

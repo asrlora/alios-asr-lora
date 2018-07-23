@@ -35,6 +35,11 @@ Maintainer: Miguel Luis ( Semtech ), Gregory Cristian ( Semtech ) and Daniel Jae
 #include "debug.h"
 #include "LoRaMacTest.h"
 
+#if defined(CONFIG_LINKWAN) && defined(AOS_KV) 
+#include <assert.h>
+#include "kvmgr.h"
+#endif
+
 #ifdef CONFIG_LORA_VERIFY
 extern bool g_lora_debug;
 TimerTime_t mcps_start_time;
@@ -242,10 +247,16 @@ static uint8_t MacCommandsBufferToRepeat[LORA_MAC_COMMAND_MAX_LENGTH];
 LoRaMacParams_t LoRaMacParams;
 
 /*!
+ * LoRaMac parameters loaded from flash/eeprom
+ */
+LoRaMacParams_t LoRaMacParamsLoaded;
+
+/*!
  * LoRaMac default parameters
  */
 LoRaMacParams_t LoRaMacParamsDefaults;
 
+static bool UseParamsLoaded = false;
 /*!
  * Uplink messages repetitions counter
  */
@@ -682,6 +693,9 @@ static void OnRadioTxDone( void )
         PRINTF_RAW("The trasaction consume %d time(ms)\r\n", curTime - mcps_start_time);
     }
 #endif
+#ifdef CONFIG_LINKWAN
+    set_lora_device_status(DEVICE_STATUS_SEND_PASS);
+#endif
 }
 
 static void PrepareRxDoneAbort( void )
@@ -731,6 +745,10 @@ static void OnRadioRxDone( uint8_t *payload, uint16_t size, int16_t rssi, int8_t
     bool isMicOk = false;
 
     McpsConfirm.AckReceived = false;
+#ifdef CONFIG_LINKWAN     
+    MlmeConfirm.Rssi = rssi;
+    MlmeConfirm.Snr = snr;
+#endif
     McpsIndication.Rssi = rssi;
     McpsIndication.Snr = snr;
     McpsIndication.RxSlot = RxSlot;
@@ -778,18 +796,6 @@ static void OnRadioRxDone( uint8_t *payload, uint16_t size, int16_t rssi, int8_t
                 LoRaMacDevAddr |= ( ( uint32_t )LoRaMacRxPayload[8] << 8 );
                 LoRaMacDevAddr |= ( ( uint32_t )LoRaMacRxPayload[9] << 16 );
                 LoRaMacDevAddr |= ( ( uint32_t )LoRaMacRxPayload[10] << 24 );
-                #if 1
-                PRINTF_RAW("LoRaMacDevAddr:0x%x\r\n", LoRaMacDevAddr);
-                int i;
-                PRINTF_RAW("LoRaMacNwkSKey: ");
-                for (i = 0; i < 16; i++)
-                    PRINTF_RAW("%02x", LoRaMacNwkSKey[i]);
-                PRINTF_RAW("\r\n");
-                PRINTF_RAW("LoRaMacAppSKey: ");
-                for (i = 0; i < 16; i++)
-                    PRINTF_RAW("%02x", LoRaMacAppSKey[i]);
-                PRINTF_RAW("\r\n");
-                #endif
                 // DLSettings
                 LoRaMacParams.Rx1DrOffset = ( LoRaMacRxPayload[11] >> 4 ) & 0x07;
                 LoRaMacParams.Rx2Channel.Datarate = LoRaMacRxPayload[11] & 0x0F;
@@ -1107,6 +1113,9 @@ static void OnRadioTxTimeout( void )
     McpsConfirm.Status = LORAMAC_EVENT_INFO_STATUS_TX_TIMEOUT;
     MlmeConfirm.Status = LORAMAC_EVENT_INFO_STATUS_TX_TIMEOUT;
     LoRaMacFlags.Bits.MacDone = 1;
+#ifdef CONFIG_LINKWAN
+    set_lora_device_status(DEVICE_STATUS_SEND_FAIL);
+#endif
 }
 
 static void OnRadioRxError( void )
@@ -1261,7 +1270,14 @@ static void OnMacStateCheckTimerEvent( void )
 
                 LoRaMacState &= ~LORAMAC_TX_RUNNING;
             }
+#ifdef CONFIG_LINKWAN
+        } else {
+            if ( !(( LoRaMacFlags.Bits.MlmeReq == 1 ) && ( MlmeConfirm.MlmeRequest == MLME_JOIN )) )
+                set_lora_device_status(DEVICE_STATUS_SEND_PASS_WITHOUT_DL);
         }
+#else
+        }
+#endif
 
         if ( ( AckTimeoutRetry == true ) && ( ( LoRaMacState & LORAMAC_TX_DELAYED ) == 0 ) ) {
             // Retransmissions procedure for confirmed uplinks
@@ -1791,7 +1807,9 @@ LoRaMacStatus_t Send( LoRaMacHeader_t *macHdr, uint8_t fPort, void *fBuffer, uin
 {
     LoRaMacFrameCtrl_t fCtrl;
     LoRaMacStatus_t status = LORAMAC_STATUS_PARAMETER_INVALID;
-
+#ifdef CONFIG_LINKWAN
+    set_lora_device_status(DEVICE_STATUS_IDLE);
+#endif
     fCtrl.Value = 0;
     fCtrl.Bits.FOptsLen      = 0;
     fCtrl.Bits.FPending      = 0;
@@ -1942,14 +1960,16 @@ static void ResetMacParameters( void )
 
     IsRxWindowsEnabled = true;
 
-    LoRaMacParams.ChannelsTxPower = LoRaMacParamsDefaults.ChannelsTxPower;
-    LoRaMacParams.ChannelsDatarate = LoRaMacParamsDefaults.ChannelsDatarate;
-    LoRaMacParams.Rx1DrOffset = LoRaMacParamsDefaults.Rx1DrOffset;
-    LoRaMacParams.Rx2Channel = LoRaMacParamsDefaults.Rx2Channel;
-    LoRaMacParams.UplinkDwellTime = LoRaMacParamsDefaults.UplinkDwellTime;
-    LoRaMacParams.DownlinkDwellTime = LoRaMacParamsDefaults.DownlinkDwellTime;
-    LoRaMacParams.MaxEirp = LoRaMacParamsDefaults.MaxEirp;
-    LoRaMacParams.AntennaGain = LoRaMacParamsDefaults.AntennaGain;
+    LoRaMacParams_t *param = UseParamsLoaded?&LoRaMacParamsLoaded:&LoRaMacParamsDefaults;
+    
+    LoRaMacParams.ChannelsTxPower = param->ChannelsTxPower;
+    LoRaMacParams.ChannelsDatarate = param->ChannelsDatarate;
+    LoRaMacParams.Rx1DrOffset = param->Rx1DrOffset;
+    LoRaMacParams.Rx2Channel = param->Rx2Channel;
+    LoRaMacParams.UplinkDwellTime = param->UplinkDwellTime;
+    LoRaMacParams.DownlinkDwellTime = param->DownlinkDwellTime;
+    LoRaMacParams.MaxEirp = param->MaxEirp;
+    LoRaMacParams.AntennaGain = param->AntennaGain;
 
     NodeAckRequested = false;
     SrvAckRequested = false;
@@ -2161,7 +2181,9 @@ LoRaMacStatus_t SendFrameOnChannel( uint8_t channel )
     Radio.Send( LoRaMacBuffer, LoRaMacBufferPktLen );
 
     LoRaMacState |= LORAMAC_TX_RUNNING;
-
+#ifdef CONFIG_LINKWAN
+    set_lora_device_status(DEVICE_STATUS_SENDING);
+#endif
     return LORAMAC_STATUS_OK;
 }
 
@@ -2315,6 +2337,14 @@ LoRaMacStatus_t LoRaMacInitialization( LoRaMacPrimitives_t *primitives, LoRaMacC
     LoRaMacParams.ChannelsNbRep = LoRaMacParamsDefaults.ChannelsNbRep;
 
     ResetMacParameters( );
+
+#if defined(CONFIG_LINKWAN) && defined(AOS_KV)
+    uint32_t len = sizeof(LoRaMacParamsLoaded);
+    if(aos_kv_get("gLoRaMacPara", &LoRaMacParamsLoaded, &len)==0) {
+        memcpy(&LoRaMacParams, &LoRaMacParamsLoaded, sizeof(LoRaMacParamsLoaded));
+        UseParamsLoaded = true;
+    }
+#endif
 
     // Initialize timers
     TimerInit( &MacStateCheckTimer, OnMacStateCheckTimerEvent );

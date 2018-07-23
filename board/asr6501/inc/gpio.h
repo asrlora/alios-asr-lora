@@ -47,6 +47,9 @@ typedef enum
     NSS_PIN,
     ANTPOW_PIN,
     DEVICE_SEL_PIN,
+    SETB_PIN,
+    SETA_PIN,
+    OTHER_PIN,
     IOE_PINS,
 
     // Not connected
@@ -126,7 +129,7 @@ typedef void( GpioIrqHandler )( void );
 /*!
  * GPIO Expander IRQ handler function prototype
  */
-typedef void( GpioIoeIrqHandler )( void );
+typedef void( *GpioIoeIrqHandler )( void );
 
 /*!
  * \brief Initializes the given GPIO object

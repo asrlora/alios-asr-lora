@@ -10,7 +10,7 @@ extern "C" {
 
 /* USER CONFIGURABLE: Instance name of the UART component */
 #if(STDIO_UART == 0)
-#define CONSOLE_UART_INSTANCE      SCB0
+#define CONSOLE_UART_INSTANCE      UART_1
 #elif (STDIO_UART == 1)
 #define CONSOLE_UART_INSTANCE      SCB1    
 #elif (STDIO_UART == 2)

@@ -35,12 +35,13 @@
       <Data key="8c8734ef-3644-4eed-bc55-360072b94fff/38438ec5-732c-47a6-9805-e2b697fb82a2" value="SPI_1_sclk_m" />
       <Data key="8c8734ef-3644-4eed-bc55-360072b94fff/1425177d-0d0e-4468-8bcc-e638e5509a9b" value="SPI_1_miso_m" />
       <Data key="8c8734ef-3644-4eed-bc55-360072b94fff/ed092b9b-d398-4703-be89-cebf998501f6" value="SPI_1_mosi_m" />
-      <Data key="8d318d8b-cf7b-4b6b-b02c-ab1c5c49d0ba" value="isr_pin" />
+      <Data key="8d318d8b-cf7b-4b6b-b02c-ab1c5c49d0ba" value="set_b" />
       <Data key="8e96a429-134d-4cca-8beb-61f49b21885d" value="reset" />
       <Data key="9be9b01f-5d10-49de-8207-55401419da4b" value="Result2" />
       <Data key="32d7d4f4-828d-4d52-8370-3d9ba1e5f34a" value="dio1" />
-      <Data key="43ec2fa1-bf22-4b71-9477-b6ca7b97f0b0/23b8206d-1c77-4e61-be4a-b4037d5de5fc" value="SCB0_tx" />
+      <Data key="43ec2fa1-bf22-4b71-9477-b6ca7b97f0b0/23b8206d-1c77-4e61-be4a-b4037d5de5fc" value="UART_1_tx" />
       <Data key="43ec2fa1-bf22-4b71-9477-b6ca7b97f0b0/78e33e5d-45ea-4b75-88d5-73274e8a7ce4" value="SCB0_rx" />
+      <Data key="43ec2fa1-bf22-4b71-9477-b6ca7b97f0b0/e9408829-61ce-4f43-b0c1-855b87d0fbdc" value="UART_1_rx_wake" />
       <Data key="0053b852-ba6b-4e2d-80e7-353c890162b4" value="dio2" />
       <Data key="77e5ba00-6c32-4311-89cb-bc8095a0e3e8" value="eint2" />
       <Data key="89c4453e-fe9a-4f30-a389-331dcedbd4d5" value="adc_in" />
@@ -2153,7 +2154,7 @@
     </Group>
     <Group key="8d318d8b-cf7b-4b6b-b02c-ab1c5c49d0ba">
       <Group key="0">
-        <Data key="Port Format" value="0,3" />
+        <Data key="Port Format" value="0,2" />
       </Group>
     </Group>
     <Group key="8e96a429-134d-4cca-8beb-61f49b21885d">
@@ -2177,6 +2178,11 @@
       </Group>
     </Group>
     <Group key="43ec2fa1-bf22-4b71-9477-b6ca7b97f0b0/78e33e5d-45ea-4b75-88d5-73274e8a7ce4">
+      <Group key="0">
+        <Data key="Port Format" value="3,0" />
+      </Group>
+    </Group>
+    <Group key="43ec2fa1-bf22-4b71-9477-b6ca7b97f0b0/e9408829-61ce-4f43-b0c1-855b87d0fbdc">
       <Group key="0">
         <Data key="Port Format" value="3,0" />
       </Group>
@@ -2228,7 +2234,7 @@
     </Group>
     <Group key="ac790b76-81e5-404e-85f1-1b10c8915506">
       <Group key="0">
-        <Data key="Port Format" value="1,3" />
+        <Data key="Port Format" value="0,6" />
       </Group>
     </Group>
     <Group key="bbb70ef0-77e4-4115-878c-e1f3c858ae9a">
@@ -2238,7 +2244,7 @@
     </Group>
     <Group key="bf3063c8-2e05-40d2-b989-126dbee6c45f">
       <Group key="0">
-        <Data key="Port Format" value="1,1" />
+        <Data key="Port Format" value="0,7" />
       </Group>
     </Group>
     <Group key="cb0d0615-b15f-4c18-91fd-cb7390915abd">
@@ -2271,23 +2277,15 @@
         <Data key="Port Format" value="1,0" />
       </Group>
     </Group>
-    <Group key="UnAssigned Pins" />
-    <Group key="Unlocked Pins">
+    <Group key="UnAssigned Pins">
       <Group key="375a1e23-73ef-466a-a33d-5c92ba942f4d">
-        <Group key="0">
-          <Group key="131751492152532273">
-            <Data key="Port Format" value="0,5" />
-          </Group>
-        </Group>
+        <Data key="0" value="131762059371924484" />
       </Group>
       <Group key="fc7282b5-b0c2-487c-b55c-97c18e4e7e66">
-        <Group key="0">
-          <Group key="131751492147681788">
-            <Data key="Port Format" value="0,4" />
-          </Group>
-        </Group>
+        <Data key="0" value="131762059626124484" />
       </Group>
     </Group>
+    <Group key="Unlocked Pins" />
   </Group>
   <Group key="PlaceDir">
     <Data key="count" value="0" />
@@ -2296,7 +2294,7 @@
     <Data key="CYDEV_CONFIG_UNUSED_IO" value="Disallowed" />
     <Data key="CYDEV_CONFIGURATION_MODE" value="COMPRESSED" />
     <Data key="CYDEV_DEBUG_PROTECT" value="OPEN" />
-    <Data key="CYDEV_DEBUGGING_DPS" value="SWD" />
+    <Data key="CYDEV_DEBUGGING_DPS" value="Disable" />
     <Data key="CYDEV_HEAP_SIZE" value="0x1800" />
     <Data key="CYDEV_STACK_SIZE" value="0x0400" />
     <Data key="CYDEV_USE_BUNDLED_CMSIS" value="True" />
