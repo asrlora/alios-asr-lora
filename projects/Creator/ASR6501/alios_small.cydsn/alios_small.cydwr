@@ -2295,7 +2295,7 @@
     <Data key="CYDEV_CONFIGURATION_MODE" value="COMPRESSED" />
     <Data key="CYDEV_DEBUG_PROTECT" value="OPEN" />
     <Data key="CYDEV_DEBUGGING_DPS" value="Disable" />
-    <Data key="CYDEV_HEAP_SIZE" value="0x1000" />
+    <Data key="CYDEV_HEAP_SIZE" value="0x1100" />
     <Data key="CYDEV_STACK_SIZE" value="0x0080" />
     <Data key="CYDEV_USE_BUNDLED_CMSIS" value="True" />
     <Data key="CYDEV_VARIABLE_VDDA" value="True" />
