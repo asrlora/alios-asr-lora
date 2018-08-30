@@ -10,6 +10,7 @@
 #include "radio.h"
 //#include "sx1276Regs-Fsk.h"
 //#include "sx1276Regs-LoRa.h"
+#include "board_test.h"
 #include "delay.h"
 #include "board.h"
 
@@ -59,6 +60,7 @@ static void lora_task_entry(void *arg)
 {
     BoardInitMcu();
     lora_init(&LoRaMainCallbacks);
+    linkwan_at_custom_handler_set(process_loratest_at);
     lora_fsm( );
 }
 

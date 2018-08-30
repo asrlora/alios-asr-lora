@@ -21,8 +21,6 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 
 Maintainer: Miguel Luis ( Semtech ), Gregory Cristian ( Semtech ) and Daniel Jaeckle ( STACKFORCE )
 */
-
-
 #include <stdbool.h>
 #include <string.h>
 #include <stdint.h>
@@ -78,6 +76,12 @@ static LoRaMacRegion_t LoRaMacRegion;
  * LoRaMac duty cycle for the back-off procedure during the next 24 hours.
  */
 #define BACKOFF_DC_24_HOURS                         10000
+
+#ifdef CONFIG_LORA_CAD
+#define LORA_CAD_CNT_MAX 8    //send frame after LORA_CAD_CNT_MAX times CAD
+#define LORA_CAD_SYMBOLS 8   //CAD symbols 
+#define LORA_CAD_DELAY  1   //delay 1ms after CAD
+#endif
 
 /*!
  * Device IEEE EUI
@@ -346,6 +350,10 @@ static RadioEvents_t RadioEvents;
  */
 static TimerEvent_t TxDelayedTimer;
 
+#ifdef CONFIG_LORA_CAD
+static TimerEvent_t TxImmediateTimer;
+static uint8_t g_lora_cad_cnt = 1;    
+#endif
 /*!
  * LoRaMac reception windows timers
  */
@@ -456,6 +464,11 @@ static void OnRadioRxError( void );
  * \brief Function executed on Radio Rx Timeout event
  */
 static void OnRadioRxTimeout( void );
+
+#ifdef CONFIG_LORA_CAD
+static void OnRadioCadDone( bool channelActivityDetected );
+static void OnTxImmediateTimerEvent( void );
+#endif
 
 /*!
  * \brief Function executed on Resend Frame timer event.
@@ -696,6 +709,7 @@ static void OnRadioTxDone( void )
 #ifdef CONFIG_LINKWAN
     set_lora_device_status(DEVICE_STATUS_SEND_PASS);
 #endif
+
 }
 
 static void PrepareRxDoneAbort( void )
@@ -1173,6 +1187,26 @@ static void OnRadioRxTimeout( void )
     }
 }
 
+#ifdef CONFIG_LORA_CAD
+static void OnRadioCadDone( bool channelActivityDetected )
+{
+    Radio.Sleep( );
+    
+    if(channelActivityDetected && g_lora_cad_cnt<LORA_CAD_CNT_MAX) {
+        // Send later - prepare timer
+        g_lora_cad_cnt ++;
+        LoRaMacState |= LORAMAC_TX_DELAYED;
+        TimerSetValue( &TxDelayedTimer, LORA_CAD_DELAY );
+        TimerStart( &TxDelayedTimer );
+    }else {
+        // Try to send now
+        g_lora_cad_cnt = 1;
+        TimerSetValue( &TxImmediateTimer, 1 );
+        TimerStart( &TxImmediateTimer );
+    }
+}
+#endif
+
 static void OnMacStateCheckTimerEvent( void )
 {
     GetPhyParams_t getPhy;
@@ -1401,6 +1435,14 @@ static void OnTxDelayedTimerEvent( void )
 
     ScheduleTx( );
 }
+
+#ifdef CONFIG_LORA_CAD
+static void OnTxImmediateTimerEvent( void )
+{
+    TimerStop( &TxImmediateTimer );
+    SendFrameOnChannel( Channel );
+}
+#endif
 
 static void OnRxWindow1TimerEvent( void )
 {
@@ -1803,6 +1845,28 @@ static void ProcessMacCommands( uint8_t *payload, uint8_t macIndex, uint8_t comm
     }
 }
 
+#ifdef CONFIG_LORA_CAD
+static bool StartCAD( uint8_t channel )
+{    
+    TxConfigParams_t txConfig;
+    int8_t txPower = 0;
+    TimerTime_t txTime = 0;
+
+    memset(&txConfig, 0, sizeof(TxConfigParams_t));
+    txConfig.Channel = channel;
+    txConfig.Datarate = LoRaMacParams.ChannelsDatarate;
+    txConfig.TxPower = LoRaMacParams.ChannelsTxPower;
+    txConfig.MaxEirp = LoRaMacParams.MaxEirp;
+    txConfig.AntennaGain = LoRaMacParams.AntennaGain;
+    txConfig.PktLen = LoRaMacBufferPktLen;
+
+    bool ret = RegionTxConfig( LoRaMacRegion, &txConfig, &txPower, &txTime );
+    Radio.StartCad(LORA_CAD_SYMBOLS);
+    
+    return ret;
+}
+#endif
+
 LoRaMacStatus_t Send( LoRaMacHeader_t *macHdr, uint8_t fPort, void *fBuffer, uint16_t fBufferSize )
 {
     LoRaMacFrameCtrl_t fCtrl;
@@ -1907,8 +1971,13 @@ static LoRaMacStatus_t ScheduleTx( void )
 
     // Schedule transmission of frame
     if ( dutyCycleTimeOff == 0 ) {
+#ifdef  CONFIG_LORA_CAD   
+        StartCAD(Channel);
+        return LORAMAC_STATUS_OK;
+#else        
         // Try to send now
         return SendFrameOnChannel( Channel );
+#endif        
     } else {
         // Send later - prepare timer
         LoRaMacState |= LORAMAC_TX_DELAYED;
@@ -2176,7 +2245,6 @@ LoRaMacStatus_t SendFrameOnChannel( uint8_t channel )
     if ( IsLoRaMacNetworkJoined == false ) {
         JoinRequestTrials++;
     }
-
     // Send now
     Radio.Send( LoRaMacBuffer, LoRaMacBufferPktLen );
 
@@ -2354,6 +2422,9 @@ LoRaMacStatus_t LoRaMacInitialization( LoRaMacPrimitives_t *primitives, LoRaMacC
     TimerInit( &RxWindowTimer1, OnRxWindow1TimerEvent );
     TimerInit( &RxWindowTimer2, OnRxWindow2TimerEvent );
     TimerInit( &AckTimeoutTimer, OnAckTimeoutTimerEvent );
+#ifdef CONFIG_LORA_CAD    
+    TimerInit( &TxImmediateTimer, OnTxImmediateTimerEvent );
+#endif    
 
     // Store the current initialization time
     LoRaMacInitializationTime = TimerGetCurrentTime( );
@@ -2364,6 +2435,9 @@ LoRaMacStatus_t LoRaMacInitialization( LoRaMacPrimitives_t *primitives, LoRaMacC
     RadioEvents.RxError = OnRadioRxError;
     RadioEvents.TxTimeout = OnRadioTxTimeout;
     RadioEvents.RxTimeout = OnRadioRxTimeout;
+#ifdef CONFIG_LORA_CAD
+    RadioEvents.CadDone = OnRadioCadDone;
+#endif
     Radio.Init( &RadioEvents );
 
     // Random seed initialization

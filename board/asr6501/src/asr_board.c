@@ -39,12 +39,18 @@ extern uint32_t current_times;
 Gpio_t AntPow;
 Gpio_t DeviceSel;
 
+#ifdef CONFIG_LORA_USE_TCXO
+bool UseTCXO = true;
+#else
+bool UseTCXO = false;
+#endif
+uint8_t gPaOptSetting = 0;
+
 void SX126xIoInit( void )
 {
     GpioInit( &SX126x.Spi.Nss, RADIO_NSS, PIN_OUTPUT, PIN_PUSH_PULL, PIN_PULL_UP, 1 );
     GpioInit( &SX126x.BUSY, RADIO_BUSY, PIN_INPUT, PIN_PUSH_PULL, PIN_NO_PULL, 0 );
     GpioInit( &SX126x.DIO1, RADIO_DIO_1, PIN_INPUT, PIN_PUSH_PULL, PIN_NO_PULL, 0 );
-    GpioInit( &DeviceSel, RADIO_DEVICE_SEL, PIN_INPUT, PIN_PUSH_PULL, PIN_NO_PULL, 0 );
 }
 
 void SX126xIoIrqInit( DioIrqHandler dioIrq )
@@ -66,11 +72,15 @@ uint32_t SX126xGetBoardTcxoWakeupTime( void )
 
 void SX126xReset( void )
 {
+    SPI_NRESET_SetDriveMode(SPI_NRESET_DM_STRONG);
+    
     DelayMs( 10 );
     GpioInit( &SX126x.Reset, RADIO_RESET, PIN_OUTPUT, PIN_PUSH_PULL, PIN_NO_PULL, 0 );
     DelayMs( 20 );
     GpioInit( &SX126x.Reset, RADIO_RESET, PIN_ANALOGIC, PIN_PUSH_PULL, PIN_NO_PULL, 1 ); // internal pull-up
     DelayMs( 10 );
+    
+    SPI_NRESET_SetDriveMode(SPI_NRESET_DM_ALG_HIZ);
 }
 
 void SX126xWaitOnBusy( void )
@@ -92,107 +102,10 @@ void SX126xWakeup( void )
     SX126xWaitOnBusy( );
     BoardEnableIrq( );
 }
-#ifdef DEBUG_SX126X
-static char* dumpCmd(RadioCommands_t command)
-{
-    switch(command){
-        case RADIO_GET_STATUS: 
-                return "RADIO_GET_STATUS";
-        case RADIO_WRITE_REGISTER:
-                return  "RADIO_WRITE_REGISTER";
-        case RADIO_READ_REGISTER:
-                return  "RADIO_READ_REGISTER";
-        case RADIO_WRITE_BUFFER:
-                return  "RADIO_WRITE_BUFFER";
-        case RADIO_READ_BUFFER:
-                return  "RADIO_READ_BUFFER";
-        case RADIO_SET_SLEEP:
-                return  "RADIO_SET_SLEEP";
-        case RADIO_SET_STANDBY:
-                return  "RADIO_SET_STANDBY";
-        case RADIO_SET_FS:
-                return  "RADIO_SET_FS";
-        case RADIO_SET_TX:
-                return  "RADIO_SET_TX";
-        case RADIO_SET_RX:
-                return  "RADIO_SET_RX";
-        case RADIO_SET_RXDUTYCYCLE:
-                return  "RADIO_SET_RXDUTYCYCLE";
-        case RADIO_SET_CAD:
-                return  "RADIO_SET_CAD";
-        case RADIO_SET_TXCONTINUOUSWAVE:
-                return  "RADIO_SET_TXCONTINUOUSWAVE";
-        case RADIO_SET_TXCONTINUOUSPREAMBLE:
-                return  "RADIO_SET_TXCONTINUOUSPREAMBLE";
-        case RADIO_SET_PACKETTYPE:
-                return  "RADIO_SET_PACKETTYPE";
-        case RADIO_GET_PACKETTYPE:
-                return  "RADIO_GET_PACKETTYPE";
-        case RADIO_SET_RFFREQUENCY:
-                return  "RADIO_SET_RFFREQUENCY";
-        case RADIO_SET_TXPARAMS:
-                return "RADIO_SET_TXPARAMS";
-        case RADIO_SET_PACONFIG:
-                return  "RADIO_SET_PACONFIG"; 
-        case RADIO_SET_CADPARAMS:
-                return  "RADIO_SET_CADPARAMS";
-        case RADIO_SET_BUFFERBASEADDRESS:
-                return  "RADIO_SET_BUFFERBASEADDRESS";
-        case RADIO_SET_MODULATIONPARAMS:
-                return  "RADIO_SET_MODULATIONPARAMS";
-        case RADIO_SET_PACKETPARAMS:
-                return  "RADIO_SET_PACKETPARAMS";
-        case RADIO_GET_RXBUFFERSTATUS:
-                return  "RADIO_GET_RXBUFFERSTATUS";
-        case RADIO_GET_PACKETSTATUS:
-                return  "RADIO_GET_PACKETSTATUS";
-        case RADIO_GET_RSSIINST:
-                return  "RADIO_GET_RSSIINST";
-        case RADIO_GET_STATS:
-                return  "RADIO_GET_STATS";
-        case RADIO_RESET_STATS:
-                return  "RADIO_RESET_STATS";
-        case RADIO_CFG_DIOIRQ:
-                return  "RADIO_CFG_DIOIRQ";
-        case RADIO_GET_IRQSTATUS:
-                return  "RADIO_GET_IRQSTATUS";
-        case RADIO_CLR_IRQSTATUS:
-                return  "RADIO_CLR_IRQSTATUS";
-        case RADIO_CALIBRATE:
-                return  "RADIO_CALIBRATE";
-        case RADIO_CALIBRATEIMAGE:
-                return  "RADIO_CALIBRATEIMAGE";
-        case RADIO_SET_REGULATORMODE:
-                return  "RADIO_SET_REGULATORMODE";
-        case RADIO_GET_ERROR:
-                return  "RADIO_GET_ERROR";
-        case RADIO_CLR_ERROR:
-                return  "RADIO_CLR_ERROR";
-        case RADIO_SET_TCXOMODE:
-                return  "RADIO_SET_TCXOMODE";
-        case RADIO_SET_TXFALLBACKMODE:
-                return  "RADIO_SET_TXFALLBACKMODE";
-        case RADIO_SET_RFSWITCHMODE:
-                return  "RADIO_SET_RFSWITCHMODE";
-        case RADIO_SET_STOPRXTIMERONPREAMBLE:
-                return  "RADIO_SET_STOPRXTIMERONPREAMBLE";
-        case RADIO_SET_LORASYMBTIMEOUT:
-                return  "RADIO_SET_LORASYMBTIMEOUT";
-        default:
-            printf("command 0x%x\r\n",command);
-                return "INVALID!";
-    }
-}
-#endif
+
 void SX126xWriteCommand( RadioCommands_t command, uint8_t *buffer, uint16_t size )
 {
-#ifdef DEBUG_SX126X
-    uint16_t i=0;
-    printf("SX126xWriteCommand: %s ",dumpCmd(command));
-    for(i=0;i<size;i++)
-        printf("0x%x ",buffer[i]);
-    printf("\r\n");
-#endif
+
     SX126xCheckDeviceReady( );
     GpioWrite( &SX126x.Spi.Nss, 0 );
 
@@ -225,25 +138,13 @@ void SX126xReadCommand( RadioCommands_t command, uint8_t *buffer, uint16_t size 
     }
 
     GpioWrite( &SX126x.Spi.Nss, 1 );
-#ifdef DEBUG_SX126X
-    uint16_t i=0;
-    printf("SX126xReadCommand: %s ",dumpCmd(command));
-    for(i=0;i<size;i++)
-        printf("0x%x ",buffer[i]);
-    printf("\r\n");
-#endif
+
     SX126xWaitOnBusy( );
 }
 
 void SX126xWriteRegisters( uint16_t address, uint8_t *buffer, uint16_t size )
 {
-    #ifdef DEBUG_SX126X
-    uint16_t i=0;
-    printf("SX126xWriteReg: 0x%x ",address);
-    for(i=0;i<size;i++)
-        printf("0x%x ",buffer[i]);
-    printf("\r\n");
-    #endif
+   
     SX126xCheckDeviceReady( );
     GpioWrite( &SX126x.Spi.Nss, 0 );
 
@@ -283,13 +184,7 @@ void SX126xReadRegisters( uint16_t address, uint8_t *buffer, uint16_t size )
     GpioWrite( &SX126x.Spi.Nss, 1 );
 
     SX126xWaitOnBusy( );
-    #ifdef DEBUG_SX126X
-    uint16_t i=0;
-    printf("SX126xReadReg: 0x%x ",address);
-    for(i=0;i<size;i++)
-        printf("0x%x ",buffer[i]);
-    printf("\r\n");
-    #endif
+   
 }
 
 uint8_t SX126xReadRegister( uint16_t address )
@@ -301,13 +196,7 @@ uint8_t SX126xReadRegister( uint16_t address )
 
 void SX126xWriteBuffer( uint8_t offset, uint8_t *buffer, uint8_t size )
 {
-    #ifdef DEBUG_SX126X
-    uint16_t i=0;
-    printf("SX126xWriteBuf: 0x%x ",offset);
-    for(i=0;i<size;i++)
-        printf("0x%x ",buffer[i]);
-    printf("\r\n");
-    #endif
+    
     SX126xCheckDeviceReady( );
 
     GpioWrite( &SX126x.Spi.Nss, 0 );
@@ -339,13 +228,7 @@ void SX126xReadBuffer( uint8_t offset, uint8_t *buffer, uint8_t size )
     GpioWrite( &SX126x.Spi.Nss, 1 );
 
     SX126xWaitOnBusy( );
-    #ifdef DEBUG_SX126X
-    uint16_t i=0;
-    printf("SX126xReadBuf: 0x%x ",offset);
-    for(i=0;i<size;i++)
-        printf("0x%x ",buffer[i]);
-    printf("\r\n");
-    #endif
+   
 }
 
 void SX126xSetRfTxPower( int8_t power )
@@ -356,15 +239,18 @@ void SX126xSetRfTxPower( int8_t power )
 uint8_t SX126xGetPaSelect( uint32_t channel )
 {
     return SX1262;
+}
 
-    if( GpioRead( &DeviceSel ) == 1 )
-    {
-        return SX1261;
-    }
-    else
-    {
-        return SX1262;
-    }
+uint8_t SX126xGetPaOpt( )
+{
+    return gPaOptSetting;
+}
+
+void SX126xSetPaOpt( uint8_t opt )
+{
+    if(opt>3) return;
+    
+    gPaOptSetting = opt;
 }
 
 void SX126xAntSwOn( void )
@@ -382,6 +268,7 @@ bool SX126xCheckRfFrequency( uint32_t frequency )
     // Implement check. Currently all frequencies are supported
     return true;
 }
+
 
 void BoardDisableIrq( void )
 {
@@ -406,9 +293,7 @@ TimerTime_t RtcGetAdjustedTimeoutValue( uint64 timeout )
 
 void RtcSetTimeout( uint64 timeout )
 {
-#if 0
-	RTC_SetUnixTime(timeout);
-#endif
+
     //RTC_DATE_TIME current;
     //RTC_GetDateAndTime(&current);
     //current.time += timeout;
@@ -434,25 +319,7 @@ TimerTime_t RtcComputeElapsedTime( TimerTime_t eventInTime )
 {
     TimerTime_t now = RTC_GetUnixTime();
     return (now = eventInTime);
-#if 0
-    TimerTime_t elapsedTime = 0;
 
-    if( eventInTime == 0 )
-    {
-        return 0;
-    }
-    
-    elapsedTime = RTC_GetUnixTime();
-
-    if( elapsedTime < eventInTime ) 
-    {  
-        return elapsedTime;
-    }
-    else
-    {
-        return eventInTime;
-    }
-#endif
 }
 
 void DelayMsMcu( uint32_t ms )

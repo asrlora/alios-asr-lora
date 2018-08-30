@@ -63,16 +63,11 @@
 #define LORA_AT_IREBOOT "+IREBOOT"
 #define LORA_AT_IDEFAULT "+IDEFAULT"
 
-//ASR self
 #define LORA_AT_PROMPT  "ASR6501:~# "
-#define LORA_AT_CSLEEP   "+CSLEEP"
-#define LORA_AT_CMCU    "+CMCU"
-#define LORA_AT_CRXC    "+CRXC"
-#define LORA_AT_CTXC    "+CTXC"
-#define LORA_AT_CSTDBY  "+CSTDBY"
 
+typedef bool (*linkwan_at_custom_handler_t) (uint8_t *buf, uint32_t size);    
+    
 void linkwan_serial_input(uint8_t cmd);
 int linkwan_serial_output(uint8_t *buffer, int len);
-#define LORA_PROMPT "ASR6501:~# "   //type "enter" prompt
-
+void linkwan_at_custom_handler_set(linkwan_at_custom_handler_t handler);
 #endif

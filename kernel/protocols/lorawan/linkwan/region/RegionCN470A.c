@@ -590,8 +590,8 @@ bool RegionCN470ATxConfig( TxConfigParams_t *txConfig, int8_t *txPower, TimerTim
 
     *txPower = txConfig->TxPower;
 
-    DBG_LINKWAN("Tx, Band %d, Freq: %d,DR: %d, len: %d, duration %d, at %d\r\n",
-                TxFreqBandNum, frequency, txConfig->Datarate, txConfig->PktLen, *txTimeOnAir, curTime);
+    DBG_LINKWAN("Tx, Power: %d, Band %d, Freq: %d,DR: %d, len: %d, duration %d, at %d\r\n",
+                phyTxPower, TxFreqBandNum, frequency, txConfig->Datarate, txConfig->PktLen, *txTimeOnAir, curTime);
     return true;
 }
 

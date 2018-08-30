@@ -7,7 +7,6 @@
 #include "linkwan.h"
 #include "linkwan_ica_at.h"
 #include "lorawan_port.h"
-#include "board_test.h"
 
 #define ATCMD_SIZE (LORAWAN_APP_DATA_BUFF_SIZE + 14)
 #define PORT_LEN 4
@@ -17,6 +16,33 @@ uint16_t atcmd_index = 0;
 
 LoRaMacParams_t gMacParams;
 extern LoRaMacParams_t LoRaMacParamsDefaults;
+
+static linkwan_at_custom_handler_t linkwan_at_custom_handler = NULL;
+
+static char *olds = NULL;
+
+char * at_strtok (char *s, const char *delim)
+{
+    char *token;
+
+    if (s == NULL) s = olds;
+
+    s += strspn (s, delim);
+    if (*s == '\0') {
+        olds = s;
+        return NULL;
+    }
+
+    token = s;
+    s = strpbrk (token, delim);  
+    if (s == NULL)
+        olds = rawmemchr (token, '\0');
+    else {      
+        *s = '\0';        
+        olds = s + 1;
+    }
+    return token;
+}
 
 static int hex2bin(const char *hex, uint8_t *bin, uint16_t bin_length)
 {
@@ -73,6 +99,7 @@ void linkwan_serial_input(uint8_t cmd)
 int linkwan_serial_output(uint8_t *buffer, int len)
 {
     PRINTF_RAW("%s", buffer);
+    PRINTF_RAW("\r\n%s", LORA_AT_PROMPT);
 }
 
 void process_linkwan_at(void)
@@ -92,10 +119,18 @@ void process_linkwan_at(void)
         memset(atcmd, 0xff, ATCMD_SIZE);
         return;
     }
+    
     if (rxcmd_index <= 0 || rxcmd[rxcmd_index] != '\0') {
         return;
     }
-
+    
+    if(!is_at_available()){
+        PRINTF_RAW("\r\nDevice is busy now\r\n");
+        atcmd_index = 0;
+        memset(atcmd, 0xff, ATCMD_SIZE);
+        return;
+    }
+    
     if (strncmp(rxcmd, LORA_AT_CJOINMODE, strlen(LORA_AT_CJOINMODE)) == 0) {
         if (rxcmd_index == (strlen(LORA_AT_CJOINMODE) + 2) &&
             strcmp(&rxcmd[strlen(LORA_AT_CJOINMODE)], "=?") == 0) {
@@ -122,7 +157,7 @@ void process_linkwan_at(void)
         } else if (rxcmd_index == (strlen(LORA_AT_CDEVEUI) + 1) &&
                    rxcmd[strlen(LORA_AT_CDEVEUI)] == '?') {
             uint8_t *eui = get_lora_dev_eui();
-            snprintf(atcmd, ATCMD_SIZE, "\r\n%s:%02x%02x%02x%02x%02x%02x%02x%02x\r\nOK\r\n", \
+            snprintf(atcmd, ATCMD_SIZE, "\r\n%s:%02X%02X%02X%02X%02X%02X%02X%02X\r\nOK\r\n", \
                      LORA_AT_CDEVEUI, eui[0], eui[1], eui[2], eui[3], eui[4], eui[5], eui[6], eui[7]);
         } else if (rxcmd_index == (strlen(LORA_AT_CDEVEUI) + 17) &&
                    rxcmd[strlen(LORA_AT_CDEVEUI)] == '=') {
@@ -144,7 +179,7 @@ void process_linkwan_at(void)
         } else if (rxcmd_index == (strlen(LORA_AT_CAPPEUI) + 1) &&
                    rxcmd[strlen(LORA_AT_CAPPEUI)] == '?') {
             uint8_t *eui = get_lora_app_eui();
-            snprintf(atcmd, ATCMD_SIZE, "\r\n%s:%02x%02x%02x%02x%02x%02x%02x%02x\r\nOK\r\n", \
+            snprintf(atcmd, ATCMD_SIZE, "\r\n%s:%02X%02X%02X%02X%02X%02X%02X%02X\r\nOK\r\n", \
                      LORA_AT_CAPPEUI, eui[0], eui[1], eui[2], eui[3], eui[4], eui[5], eui[6], eui[7]);
         } else if (rxcmd_index == (strlen(LORA_AT_CAPPEUI) + 17) &&
                    rxcmd[strlen(LORA_AT_CAPPEUI)] == '=') {
@@ -167,7 +202,7 @@ void process_linkwan_at(void)
                    rxcmd[strlen(LORA_AT_CAPPKEY)] == '?') {
             uint8_t *key = get_lora_app_key();
             snprintf(atcmd, ATCMD_SIZE,
-                     "\r\n%s:%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x\r\nOK\r\n", \
+                     "\r\n%s:%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X\r\nOK\r\n", \
                      LORA_AT_CAPPKEY, key[0], key[1], key[2], key[3], key[4], key[5], key[6], key[7],
                      key[8], key[9], key[10], key[11], key[12], key[13], key[14], key[15]);
         } else if (rxcmd_index == (strlen(LORA_AT_CAPPKEY) + 33) &&
@@ -193,7 +228,7 @@ void process_linkwan_at(void)
             rxcmd[at_str_len] == '?') {
             uint8_t *devaddr = get_lora_devaddr();
             uint8_t i;
-            length = snprintf(atcmd, ATCMD_SIZE, "\r\n%s:%02x%02x%02x%02x", LORA_AT_CDEVADDR,
+            length = snprintf(atcmd, ATCMD_SIZE, "\r\n%s:%02X%02X%02X%02X", LORA_AT_CDEVADDR,
                 devaddr[0], devaddr[1], devaddr[2], devaddr[3]);
             snprintf(atcmd + length, ATCMD_SIZE, "\r\nOK\r\n");
         } else if (rxcmd_index == (at_str_len + 9) &&
@@ -217,11 +252,11 @@ void process_linkwan_at(void)
             snprintf(atcmd, ATCMD_SIZE, "\r\n%s=<AppSKey: length is 32>\r\n", LORA_AT_CAPPSKEY);
         } else if (rxcmd_index == (at_str_len + 1) &&
             rxcmd[at_str_len] == '?') {
-            uint8_t *devaddr = get_lora_appskey();
+            uint8_t *appskey = get_lora_appskey();
             uint8_t i;
             length = snprintf(atcmd, ATCMD_SIZE, "\r\n%s:", LORA_AT_CAPPSKEY);
             for (i = 0; i < 16; i++) {
-                length += snprintf(atcmd + length, ATCMD_SIZE, "%02x", devaddr[i]);
+                length += snprintf(atcmd + length, ATCMD_SIZE, "%02X", appskey[i]);
             }
             snprintf(atcmd + length, ATCMD_SIZE, "\r\nOK\r\n");
         } else if (rxcmd_index == (at_str_len + 33) &&
@@ -245,11 +280,11 @@ void process_linkwan_at(void)
             snprintf(atcmd, ATCMD_SIZE, "\r\n%s=<NwkSKey:length is 32>\r\n", LORA_AT_CNWKSKEY);
         } else if (rxcmd_index == (at_str_len + 1) &&
             rxcmd[at_str_len] == '?') {
-            uint8_t *devaddr = get_lora_nwkskey();
+            uint8_t *nwkskey = get_lora_nwkskey();
             uint8_t i;
             length = snprintf(atcmd, ATCMD_SIZE, "\r\n%s:", LORA_AT_CNWKSKEY);
             for (i = 0; i < 16; i++) {
-                length += snprintf(atcmd + length, ATCMD_SIZE, "%02x", devaddr[i]);
+                length += snprintf(atcmd + length, ATCMD_SIZE, "%02X", nwkskey[i]);
             }
             snprintf(atcmd + length, ATCMD_SIZE, "\r\nOK\r\n");
         } else if (rxcmd_index == (at_str_len + 33) &&
@@ -273,8 +308,8 @@ void process_linkwan_at(void)
                    rxcmd[strlen(LORA_AT_CADDMUTICAST)] == '?') {
             MulticastParams_t *curMutiInfo = get_lora_cur_multicast();
             if (curMutiInfo != NULL) {
-                snprintf(atcmd, ATCMD_SIZE, "\r\n%s:%d,%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x,\
-				%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x\r\n", LORA_AT_CADDMUTICAST,
+                snprintf(atcmd, ATCMD_SIZE, "\r\n%s:%d,%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X,\
+				%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X\r\n", LORA_AT_CADDMUTICAST,
                         curMutiInfo->Address, \
                         curMutiInfo->AppSKey[0], curMutiInfo->AppSKey[1], curMutiInfo->AppSKey[2], curMutiInfo->AppSKey[3],
                         \
@@ -297,15 +332,15 @@ void process_linkwan_at(void)
              }
         } else if (rxcmd_index > (strlen(LORA_AT_CADDMUTICAST) + 1) &&
                    rxcmd[strlen(LORA_AT_CADDMUTICAST)] == '=') {
-            MulticastParams_t *curMulticastInfo = aos_malloc(sizeof(MulticastParams_t));
+            MulticastParams_t curMulticastInfo;
             char *str = strtok(&rxcmd[strlen(LORA_AT_CADDMUTICAST) + 1], ",");
-            curMulticastInfo->Address = strtol(str, NULL, 0);
+            curMulticastInfo.Address = strtol(str, NULL, 0);
             str = strtok(NULL, ",");
-            uint8_t len = hex2bin(str, curMulticastInfo->AppSKey, 16);
+            uint8_t len = hex2bin(str, curMulticastInfo.AppSKey, 16);
             str = strtok(NULL, ",");
-            len = hex2bin(str, curMulticastInfo->NwkSKey, 16);
+            len = hex2bin(str, curMulticastInfo.NwkSKey, 16);
             if (len == 16) {
-                set_lora_multicast(curMulticastInfo);
+                set_lora_multicast(&curMulticastInfo);
             } else {
 	        ret = false;
 	    }
@@ -343,7 +378,7 @@ void process_linkwan_at(void)
             snprintf(atcmd, ATCMD_SIZE, "\r\n%s=\"mask\"\r\n", LORA_AT_CFREQBANDMASK);
         } else if (rxcmd_index == (strlen(LORA_AT_CFREQBANDMASK) + 1) &&
                    rxcmd[strlen(LORA_AT_CFREQBANDMASK)] == '?') {
-            snprintf(atcmd, ATCMD_SIZE, "\r\n%s:%04x\r\n", LORA_AT_CFREQBANDMASK, get_lora_freqband_mask());
+            snprintf(atcmd, ATCMD_SIZE, "\r\n%s:%04X\r\n", LORA_AT_CFREQBANDMASK, get_lora_freqband_mask());
         } else if (rxcmd_index > (strlen(LORA_AT_CFREQBANDMASK) + 1) &&
                    rxcmd[strlen(LORA_AT_CFREQBANDMASK)] == '=') {
             uint8_t mask[2];
@@ -431,7 +466,7 @@ void process_linkwan_at(void)
         } else if (rxcmd_index == (strlen(LORA_AT_CBL) + 1) &&
                    rxcmd[strlen(LORA_AT_CBL)] == '?') {
             uint8_t batteryLevel = get_device_battery();
-            snprintf(atcmd, ATCMD_SIZE, "\r\n %s:%d\r\nOK\r\n", LORA_AT_CBL, status);
+            snprintf(atcmd, ATCMD_SIZE, "\r\n%s:%d\r\nOK\r\n", LORA_AT_CBL, batteryLevel);
         } else {
             ret = false;
         }
@@ -444,7 +479,7 @@ void process_linkwan_at(void)
                    rxcmd[strlen(LORA_AT_CSTATUS)] == '?') {
             ret = true;
             status = get_lora_device_status();
-            snprintf(atcmd, ATCMD_SIZE, "\r\n %s:%02d\r\nOK\r\n", LORA_AT_CSTATUS, status);
+            snprintf(atcmd, ATCMD_SIZE, "\r\n%s:%02d\r\nOK\r\n", LORA_AT_CSTATUS, status);
         } else {
             ret = false;
         }
@@ -460,19 +495,20 @@ void process_linkwan_at(void)
             snprintf(atcmd, ATCMD_SIZE, "\r\n%s:%d,%d,%d,%d\r\nOK\r\n", LORA_AT_CJOIN, bJoin, bAutoJoin, joinInterval,
                      joinRetryCnt);
         } else if (rxcmd_index >=  (strlen(LORA_AT_CJOIN) + 2) &&
-                   rxcmd[strlen(LORA_AT_CJOIN)] == '=') {
-            char *str = strtok(&rxcmd[strlen(LORA_AT_CJOIN) + 1], ",");
+                   rxcmd[strlen(LORA_AT_CJOIN)] == '=') {              
+            char *str = at_strtok(&rxcmd[strlen(LORA_AT_CJOIN) + 1], ",");
             bJoin = strtol(str, NULL, 0);
-            str = strtok(NULL, ",");
+            str = at_strtok(NULL, ",");
             bAutoJoin = strtol(str, NULL, 0);
-            str = strtok(NULL, ",");
+            str = at_strtok(NULL, ",");
             joinInterval = strtol(str, NULL, 0);
-            str = strtok(NULL, ",");
+            str = at_strtok(NULL, ",");
             joinRetryCnt = strtol(str, NULL, 0);
+           
             if ((bJoin == 0) || (bJoin == 1)){
                 init_lora_join(bJoin, bAutoJoin, joinInterval, joinRetryCnt);
                 snprintf(atcmd, ATCMD_SIZE, "\r\nOK\r\n");
-            }
+            }           
         } else {
             ret = false;
         }
@@ -513,8 +549,9 @@ void process_linkwan_at(void)
             len = snprintf(atcmd, ATCMD_SIZE, "\r\n%s:%d", LORA_AT_DRX, rx_data->BuffSize);
             if (rx_data->BuffSize > 0) {
                 len += snprintf(atcmd + len, ATCMD_SIZE, ",");
-                memcpy(atcmd + len, rx_data->Buff, rx_data->BuffSize);
-                len += rx_data->BuffSize;
+                for(int i=0; i<rx_data->BuffSize; i++) {
+                    len += snprintf(atcmd + len, ATCMD_SIZE, "%02X", rx_data->Buff[i]);
+                }
             }
             rx_data->BuffSize = 0;
             snprintf(atcmd + len, ATCMD_SIZE, "\r\n%s\r\n", "OK");
@@ -592,8 +629,8 @@ void process_linkwan_at(void)
             } else {
                 char freq_str[4];
                 int16_t channel_rssi[8];
-                strncpy(&freq_str, &rxcmd[strlen(LORA_AT_CRSSI)], rxcmd_index - strlen(LORA_AT_CRSSI) - 2);
-                freq_str[rxcmd_index - strlen(LORA_AT_CRSSI) - 2] = '\0';
+                strncpy(&freq_str, &rxcmd[strlen(LORA_AT_CRSSI)], rxcmd_index - strlen(LORA_AT_CRSSI) - 1);
+                freq_str[rxcmd_index - strlen(LORA_AT_CRSSI) - 1] = '\0';
                 uint8_t freq_band = strtol(freq_str, NULL, 0);
                 get_lora_rssi(freq_band, channel_rssi);
                 snprintf(atcmd, ATCMD_SIZE, "\r\n%s:\r\n0:%d\r\n1:%d\r\n2:%d\r\n3:%d\r\n4:%d\r\n5:%d\r\n6:%d\r\n7:%d\r\nOK\r\n", \
@@ -787,8 +824,12 @@ void process_linkwan_at(void)
             LoRaMacParams_t *mMacP;
             mMacP = get_lora_mac_params();
             memcpy(&gMacParams, mMacP, sizeof(LoRaMacParams_t));
+#ifdef AOS_KV            
             aos_kv_set("gLoRaMacPara", &gMacParams, sizeof(LoRaMacParams_t), 1);
             snprintf(atcmd, ATCMD_SIZE, "\r\nOK\r\n");
+#else
+            ret = false;
+#endif            
         } else {
             ret = false;
         }
@@ -797,8 +838,12 @@ void process_linkwan_at(void)
             strcmp(&rxcmd[strlen(LORA_AT_CRESTORE)], "=?") == 0) {
             snprintf(atcmd, ATCMD_SIZE, "\r\n%s\r\nOK\r\n", LORA_AT_CSAVE);
         } else if (rxcmd_index == strlen(LORA_AT_CRESTORE)) {
+#ifdef AOS_KV            
             aos_kv_set("gLoRaMacPara", &LoRaMacParamsDefaults, sizeof(LoRaMacParams_t), 1);
             snprintf(atcmd, ATCMD_SIZE, "\r\nOK\r\n");
+#else
+            ret = false;
+#endif
         } else {
             ret = false;
         }
@@ -863,76 +908,13 @@ void process_linkwan_at(void)
         }
     } else if (strncmp(rxcmd, LORA_AT_IDEFAULT, strlen(LORA_AT_IDEFAULT)) == 0) {
         ret = false;
-    } else if (strncmp(rxcmd, LORA_AT_CSLEEP, strlen(LORA_AT_CSLEEP)) == 0) {
-        uint8_t cmd_len;
-        ret = true;
-        cmd_len = strlen(LORA_AT_CSLEEP);
-        if (rxcmd_index == (cmd_len + 2) &&
-            strcmp(&rxcmd[cmd_len], "=?") == 0) {
-            snprintf(atcmd, ATCMD_SIZE, "\r\n%s = <0, 1, 2 >\r\nOK\r\n", LORA_AT_CSLEEP);
-        } else if (rxcmd_index > (cmd_len + 1) &&
-                   rxcmd[cmd_len] == '=') {
-            uint8_t sleep_mode;
-            sleep_mode = strtol(&rxcmd[cmd_len + 1], NULL, 0);
-            LoRaTestSleep(sleep_mode);
-            snprintf(atcmd, ATCMD_SIZE, "\r\n%s\r\nOK\r\n", LORA_AT_CSLEEP);
-	    }
-    } else if (strncmp(rxcmd, LORA_AT_CMCU, strlen(LORA_AT_CMCU)) == 0) {
-        uint8_t cmd_len;
-        ret = true;
-        cmd_len = strlen(LORA_AT_CMCU);
-        if (rxcmd_index == (cmd_len + 2) &&
-            strcmp(&rxcmd[cmd_len], "=?") == 0) {
-            snprintf(atcmd, LORA_AT_CMCU, "\r\n%s = <0, 1, 2, 3 >\r\nOK\r\n", LORA_AT_CMCU);
-        } else if (rxcmd_index > (cmd_len + 1) &&
-                   rxcmd[cmd_len] == '=') {
-            uint8_t mcu_mode;
-            mcu_mode = strtol(&rxcmd[cmd_len + 1], NULL, 0);
-            LoRaTestMcu(mcu_mode);
-            snprintf(atcmd, ATCMD_SIZE, "\r\n%s\r\nOK\r\n", LORA_AT_CMCU);
-	    }
-    } else if (strncmp(rxcmd, LORA_AT_CRXC, strlen(LORA_AT_CRXC)) == 0) {
-        uint8_t cmd_len;
-        ret = true;
-        cmd_len = strlen(LORA_AT_CRXC);
-        if (rxcmd_index == (cmd_len + 2) &&
-            strcmp(&rxcmd[cmd_len], "=?") == 0) {
-            snprintf(atcmd, LORA_AT_CRXC, "\r\n%s = <0, 1, 2, 3, 4, 5 >\r\nOK\r\n", LORA_AT_CRXC);
-        } else if (rxcmd_index > (cmd_len + 1) &&
-                   rxcmd[cmd_len] == '=') {
-            uint8_t dr;
-            dr = strtol(&rxcmd[cmd_len + 1], NULL, 0);
-            LoRaTestRxc(dr);
-            snprintf(atcmd, ATCMD_SIZE, "\r\n%s\r\nOK\r\n", LORA_AT_CRXC);
-	    }
-    } else if (strncmp(rxcmd, LORA_AT_CTXC, strlen(LORA_AT_CTXC)) == 0) {
-        uint8_t cmd_len;
-        ret = true;
-        cmd_len = strlen(LORA_AT_CTXC);
-        if (rxcmd_index == (cmd_len + 2) &&
-            strcmp(&rxcmd[cmd_len], "=?") == 0) {
-            snprintf(atcmd, LORA_AT_CTXC, "\r\n%s = <0~22>\r\nOK\r\n", LORA_AT_CTXC);
-        } else if (rxcmd_index > (cmd_len + 1) &&
-                   rxcmd[cmd_len] == '=') {
-            uint8_t pwr;
-            pwr = strtol(&rxcmd[cmd_len + 1], NULL, 0);
-            LoRaTestTxc(pwr);
-            snprintf(atcmd, ATCMD_SIZE, "\r\n%s\r\nOK\r\n", LORA_AT_CTXC);
-	    }
-    } else if (strncmp(rxcmd, LORA_AT_CSTDBY, strlen(LORA_AT_CSTDBY)) == 0) {
-        uint8_t cmd_len;
-        ret = true;
-        cmd_len = strlen(LORA_AT_CSTDBY);
-        if (rxcmd_index == (cmd_len + 2) &&
-            strcmp(&rxcmd[cmd_len], "=?") == 0) {
-            snprintf(atcmd, LORA_AT_CSTDBY, "\r\n%s = <0, 1 >\r\nOK\r\n", LORA_AT_CSTDBY);
-        } else if (rxcmd_index > (cmd_len + 1) &&
-                   rxcmd[cmd_len] == '=') {
-            uint8_t stdby;
-            stdby = strtol(&rxcmd[cmd_len + 1], NULL, 0);
-            LoRaTestStdby(stdby);
-            snprintf(atcmd, ATCMD_SIZE, "\r\n%s\r\nOK\r\n", LORA_AT_CSTDBY);
-	    }
+    } else if (linkwan_at_custom_handler){
+        ret = linkwan_at_custom_handler(rxcmd, rxcmd_index);
+        if(ret) {
+            atcmd_index = 0;
+            memset(atcmd, 0xff, ATCMD_SIZE);
+            return;
+        }
     } else {
         ret = false;
     }
@@ -951,4 +933,9 @@ void linkwan_at_init(void)
 {
     atcmd_index = 0;
     memset(atcmd, 0xff, ATCMD_SIZE);
+}
+
+void linkwan_at_custom_handler_set(linkwan_at_custom_handler_t handler)
+{
+    linkwan_at_custom_handler = handler;
 }

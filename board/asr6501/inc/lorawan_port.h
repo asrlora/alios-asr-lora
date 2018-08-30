@@ -14,10 +14,11 @@ extern "C" {
 /* Includes ------------------------------------------------------------------*/
 #include <string.h>
 #include <stdio.h>
+#include <k_api.h>
+#include "port.h"
 #include "hal/lorawan.h"
 #include "utilities.h"
 
-#include <k_api.h>
 
 typedef uint32_t time_ms_t;
 typedef uint32_t time_tick_t;

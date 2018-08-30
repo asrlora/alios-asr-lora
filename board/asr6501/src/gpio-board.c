@@ -34,10 +34,7 @@ void hal_gpio_write(int pin, int value)
     {
         case RESET_PIN: SPI_NRESET_Write(value); break;
         case DIO1_PIN: dio1_Write(value); break;
-//        case DIO2_PIN: dio2_Write(value); break;
-//        case DIO3_PIN: dio3_Write(value); break;
         case ANTPOW_PIN: antpow_Write(value); break;
-//        case DEVICE_SEL_PIN: device_sel_Write(value); break;
         case NSS_PIN: nss_Write(value); break;
         case BUSY_PIN: SPI_BUSY_Write(value); break;
         default:
@@ -51,10 +48,7 @@ int hal_gpio_read(int pin)
     {
         case RESET_PIN: return SPI_NRESET_Read();
         case DIO1_PIN: return dio1_Read();
-//        case DIO2_PIN: return dio2_Read();
- //       case DIO3_PIN: return dio3_Read();
         case ANTPOW_PIN: return antpow_Read();
- //       case DEVICE_SEL_PIN: return device_sel_Read();
         case NSS_PIN: return nss_Read();
         case BUSY_PIN: return SPI_BUSY_Read();
         default:
@@ -75,15 +69,14 @@ void GpioMcuInit( Gpio_t *obj, PinNames pin, PinModes mode, PinConfigs config, P
 
     obj->pin = pin;
     // Sets initial output value
-//    if( mode == PIN_OUTPUT )
-    {
-        GpioMcuWrite( obj, value );
-    }
+
+    GpioMcuWrite( obj, value );
+   
 }
 
 void GpioMcuSetInterrupt( Gpio_t *obj, IrqModes irqMode, IrqPriorities irqPriority, GpioIrqHandler *irqHandler )
 {
-    //    obj->pin  todo...........
+
     static uint8 g_lora_irq_init = 0;
     RegisterGpioCallback(obj, irqHandler);
     if (g_lora_irq_init == 0) {

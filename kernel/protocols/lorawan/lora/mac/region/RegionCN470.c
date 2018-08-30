@@ -468,7 +468,7 @@ void RegionCN470ComputeRxWindowParameters( int8_t datarate, uint8_t minRxSymbols
 
     tSymbol = RegionCommonComputeSymbolTimeLoRa( DataratesCN470[datarate], BandwidthsCN470[datarate] );
 
-    radioWakeUpTime = Radio.GetRadioWakeUpTime( );
+    radioWakeUpTime = Radio.GetWakeupTime( );
     RegionCommonComputeRxWindowParameters( tSymbol, minRxSymbols, rxError, radioWakeUpTime, &rxConfigParams->WindowTimeout, &rxConfigParams->WindowOffset );
 }
 
@@ -575,8 +575,7 @@ uint8_t RegionCN470LinkAdrReq( LinkAdrReqParams_t* linkAdrReq, int8_t* drOut, in
         }
         else
         {
-            for( uint8_t i = 0; i <CN470_MAX_NB_CHANNELS; i++ )    //perry 2017/7/24
-            //for( uint8_t i = 0; i < 16; i++ )
+            for( uint8_t i = 0; i < 16; i++ )
             {
                 if( ( ( linkAdrParams.ChMask & ( 1 << i ) ) != 0 ) &&
                     ( Channels[linkAdrParams.ChMaskCtrl * 16 + i].Frequency == 0 ) )

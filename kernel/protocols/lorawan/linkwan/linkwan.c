@@ -10,6 +10,7 @@
 #include "RegionCN470A.h"
 #include "timeServer.h"
 #include "radio.h"
+#include "linkwan_ica_at.h"
 #include <uart_port.h>
 #include "hal/soc/uart.h"
 #ifdef AOS_KV
@@ -32,9 +33,10 @@ static bool next_tx = true;
 static uint8_t num_trials = 8;
 static bool rejoin_flag = true;
 
-static uint8_t gJoinState = 0;
-static uint8_t gAutoJoin = 1;
-static uint16_t gJoinInterval =8;
+static uint8_t gAutoJoin = 0;
+static uint8_t gJoinInterval =8;
+static uint16_t gJoinTrials = 8;
+
 static uint32_t g_ack_index = 0;
 static uint32_t g_msg_index = 0;
 
@@ -68,7 +70,14 @@ typedef struct {
     bool     PublicNetwork;
 } __attribute__((packed)) RadioLoRaSettings_t;
 
+typedef struct {
+    bool autoJoin;
+    uint8_t joinInterval;
+    uint8_t joinTrials;
+}JoinSettings_t;
+
 extern LoRaMacParams_t LoRaMacParams;
+extern uint32_t LoRaMacState;
 static TimerEvent_t TxNextPacketTimer;
 volatile static DeviceState_t device_state = DEVICE_STATE_INIT;
 static DeviceStatus_t device_status = DEVICE_STATUS_IDLE;
@@ -379,7 +388,7 @@ static uint32_t generate_rejoin_delay(void)
 {
     uint32_t rejoin_delay = 0;
 
-    while (rejoin_delay < 8000) {
+    while (rejoin_delay < gJoinInterval*1000) {
         rejoin_delay += (Radio.Random() % 250);
     }
 
@@ -550,6 +559,15 @@ void lora_fsm( void )
                 if (lora_abp_id.flag == VALID_LORA_CONFIG) {
                     memcpy(&g_lora_abp_id, &lora_abp_id, sizeof(g_lora_abp_id));
                 }
+                
+                JoinSettings_t join_settings;
+                len = sizeof(join_settings);
+                memset(&join_settings, 0, len);
+                if(aos_kv_get("join", &join_settings, &len) == 0) {
+                    gAutoJoin = join_settings.autoJoin;
+                    gJoinInterval = join_settings.joinInterval;
+                    gJoinTrials = join_settings.joinTrials+1;
+                }
 #endif
                 if (g_lora_dev.dev_eui[5] & 0x1) {
                     g_freq_mode = FREQ_MODE_INTER;
@@ -630,8 +648,14 @@ void lora_fsm( void )
                 LoRaMacMibSetRequestConfirm(&mibReq);
 #endif
 
-#endif
-                device_state = DEVICE_STATE_JOIN;
+#endif           
+                if(gAutoJoin){
+                    device_state = DEVICE_STATE_JOIN;
+                } else {
+                    device_state = DEVICE_STATE_SLEEP;
+                    PRINTF_RAW("\r\n%s", LORA_AT_PROMPT);
+                }
+                
                 set_lora_device_status(DEVICE_STATUS_IDLE);
                 break;
             }
@@ -651,7 +675,7 @@ void lora_fsm( void )
                         mlmeReq.Req.Join.datarate = g_lora_config.datarate;
                         mlmeReq.Req.Join.NbTrials = 3;
                     } else {
-                        mlmeReq.Req.Join.NbTrials = num_trials;
+                        mlmeReq.Req.Join.NbTrials = gJoinTrials;
                     }
 
                     if (next_tx == true && rejoin_flag == true) {
@@ -715,10 +739,10 @@ void lora_fsm( void )
                 device_state = DEVICE_STATE_SLEEP;
                 break;
             }
-            case DEVICE_STATE_SLEEP: {
+            case DEVICE_STATE_SLEEP: {       
+#ifndef LOW_POWER_DISABLE
                 // Wake up through events
                 DeepSleepInIdle();
-#ifndef LOW_POWER_DISABLE
                 LowPower_Handler( );
 #endif
                 break;
@@ -1153,9 +1177,22 @@ DeviceStatus_t get_lora_device_status(void)
 
 void get_lora_rssi(uint8_t band, int16_t *channel_rssi)
 {
+    //CN470A Only
+    uint8_t FreqBandStartChannelNum[16] = {0, 8, 16, 24, 100, 108, 116, 124, 68, 76, 84, 92, 166, 174, 182, 190};
+    if(band>=16) return;
+
+    Radio.SetModem(MODEM_LORA);
     for (uint8_t i = 0; i < 8; i++) {
+        uint32_t freq = 470300000 + (FreqBandStartChannelNum[band] + i) * 200000;
+        
+        Radio.SetChannel(freq);
+        Radio.Rx( 0 );
+        CyDelay(3);
+        
         channel_rssi[i] = Radio.Rssi(MODEM_LORA);
     }
+    
+    Radio.Sleep();
 }
 bool get_lora_report_mode(void)
 {
@@ -1287,7 +1324,6 @@ bool get_lora_join_params(uint8_t *bJoin, uint8_t *bAuto, uint16_t *joinInterval
 
 }
 
-
 bool init_lora_join(uint8_t bJoin, uint8_t bAutoJoin, uint16_t joinInterval, uint16_t joinRetryCnt)
 {
 
@@ -1305,8 +1341,18 @@ bool init_lora_join(uint8_t bJoin, uint8_t bAutoJoin, uint16_t joinInterval, uin
             rejoin_flag = bAutoJoin;
             ret = true;
         }
-    } else if(bJoin == 1){
-        set_lora_tx_cfm_trials(joinRetryCnt);
+    } else if(bJoin == 1){  
+        JoinSettings_t join_settings;
+        join_settings.autoJoin = bAutoJoin;
+        join_settings.joinInterval = (joinInterval>=7 && joinInterval<=255)?joinInterval:gJoinInterval;
+        join_settings.joinTrials = (joinRetryCnt>=1 && joinRetryCnt<=256)?(joinRetryCnt-1):(gJoinTrials-1);
+#ifdef AOS_KV        
+        int kvRet = aos_kv_set("join", &join_settings, sizeof(join_settings));
+#endif        
+        
+        gJoinTrials = join_settings.joinTrials +1;
+        gJoinInterval = join_settings.joinInterval;
+
         rejoin_flag = bAutoJoin;
         MibRequestConfirm_t mib_req;
         mib_req.Type = MIB_NETWORK_JOINED;
@@ -1316,9 +1362,9 @@ bool init_lora_join(uint8_t bJoin, uint8_t bAutoJoin, uint16_t joinInterval, uin
                 mib_req.Type = MIB_NETWORK_JOINED;
                 mib_req.Param.IsNetworkJoined = false;
                 LoRaMacMibSetRequestConfirm(&mib_req);
+                DBG_LINKWAN("Rejoin again...\r");
             }
-            DBG_LINKWAN("Rejoin again...\r");
-            gJoinInterval = joinInterval;
+            
             reset_join_state();
             g_join_method = DEF_JOIN_METHOD;
             TimerStop(&TxNextPacketTimer);
@@ -1361,4 +1407,11 @@ bool lora_tx_data_payload(uint8_t confirm, uint8_t Nbtrials, uint8_t *payload, u
     return false;
 }
 
+bool is_at_available() {
+    if(device_state == DEVICE_STATE_SLEEP 
+        && LoRaMacState == 0)
+        return true;
+    
+    return false;
+}
 

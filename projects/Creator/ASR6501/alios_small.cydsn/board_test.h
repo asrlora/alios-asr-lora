@@ -13,19 +13,14 @@
 #define _ASR_BOARD_TEST_H
 #include <stdbool.h>
 #include <stdio.h>
+    
 bool LoRaTestSleep(uint8_t sleep_mode);
 bool LoRaTestMcu(uint8_t mcu_mode);
-bool LoRaTestRxc(uint8_t dr);
-bool LoRaTestTxc(uint8_t pwr);
+bool LoRaTestRx(uint32_t freq, uint8_t dr);
+bool LoRaTestTx(uint32_t freq, uint8_t dr, uint8_t pwr);
+bool LoRaTestTxcw(uint32_t freq, uint8_t pwr, uint8_t opt);
 bool LoRaTestStdby(uint8_t stdby);
-typedef enum
-{
-    LOWPOWER,
-    RX,
-    RX_TIMEOUT,
-    RX_ERROR,
-    TX,
-    TX_TIMEOUT,
-}States_t;
+bool process_loratest_at(uint8_t *buf, uint32_t size);
+
 #endif
 /* [] END OF FILE */

@@ -273,7 +273,7 @@ struct Radio_s
     /*!
      * \brief Start a Channel Activity Detection
      */
-    void    ( *StartCad )( void );
+    void    ( *StartCad )( uint8_t symbols );
     /*!
      * \brief Sets the radio in continuous wave transmission mode
      *

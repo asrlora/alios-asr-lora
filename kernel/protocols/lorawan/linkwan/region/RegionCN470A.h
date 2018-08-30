@@ -108,7 +108,7 @@
 /*!
  * Default Max EIRP
  */
-#define CN470A_DEFAULT_MAX_EIRP                      12.15f
+#define CN470A_DEFAULT_MAX_EIRP                      19.15f
 
 /*!
  * Default antenna gain

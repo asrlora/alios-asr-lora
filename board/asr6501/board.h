@@ -24,8 +24,6 @@
 #define __BOARD_H__
 
 #include <stdint.h>
-#define HARDWARE_REVISION   "V1.0"
-#define MODEL               "PSOC4"
 
 #ifdef BOOTLOADER
 #define STDIO_UART 0

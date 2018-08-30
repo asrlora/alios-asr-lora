@@ -138,6 +138,12 @@ bool SX126xCheckRfFrequency( uint32_t frequency );
  */
 uint32_t SX126xGetBoardTcxoWakeupTime( void );
 
+
+uint8_t SX126xGetPaOpt( void );
+
+void SX126xSetPaOpt( uint8_t opt );
+
+
 /*!
  * Radio hardware and global parameters
  */

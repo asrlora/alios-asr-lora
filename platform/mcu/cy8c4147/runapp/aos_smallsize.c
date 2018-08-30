@@ -80,6 +80,7 @@ static void sys_init(void)
     }
 }
 
+extern uint32_t g_rtc_period;
 static void sys_start(void)
 {
     kstat_t stat;    
@@ -96,7 +97,7 @@ static void sys_start(void)
     /* set wco */
     Asr_Timer_Init();
     CySysTimerDisable(CY_SYS_TIMER2_MASK);
-    CySysTimerResetCounters(CY_SYS_TIMER2_MASK);
+    CySysTimerResetCounters(CY_SYS_TIMER2_RESET);
     CySysTimerSetToggleBit(3);//0~31
     CySysTimerSetInterruptCallback(2, RTC_Update_ASR);
     CySysTimerEnableIsr(2);

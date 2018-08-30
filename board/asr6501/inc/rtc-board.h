@@ -26,7 +26,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 void RTC_Update_ASR(void);
-uint32_t g_rtc_period;
 /*!
  * \brief Timer time variable definition
  */
