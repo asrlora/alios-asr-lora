@@ -64,7 +64,7 @@ Maintainer: Miguel Luis and Gregory Cristian
 #define ALIGN(n)             __attribute__((aligned(n)))
 #include <stdint.h>
 #include <stdbool.h>
-typedef uint32_t TimerTime_t;
+typedef uint64_t TimerTime_t;
 
 /*!
  * \brief Returns the minimum value between a and b
@@ -99,6 +99,7 @@ typedef uint32_t TimerTime_t;
  */
 void srand1( uint32_t seed );
 
+int32_t rand1( void );
 /*!
  * \brief Computes a random number between min and max
  *
@@ -146,5 +147,7 @@ void memset1( uint8_t *dst, uint8_t value, uint16_t size );
  * \retval hexChar Converted hexadecimal character
  */
 int8_t Nibble2HexChar( uint8_t a );
+
+char * strtok_l (char *s, const char *delim);
 
 #endif // __UTILITIES_H__

@@ -187,6 +187,50 @@
  */
 #define CN470A_RX_WND_2_DR                           DR_0
 
+/*
+ * CLASS B
+ */
+/*!
+ * Beacon frequency
+ */
+#define CN470A_BEACON_CHANNEL_FREQ                   508300000
+
+/*!
+ * Beacon frequency channel stepwidth
+ */
+#define CN470A_BEACON_CHANNEL_STEPWIDTH              200000
+
+/*!
+ * Number of possible beacon channels
+ */
+#define CN470A_BEACON_NB_CHANNELS                    8
+
+/*!
+ * Payload size of a beacon frame
+ */
+#define CN470A_BEACON_SIZE                           19
+
+/*!
+ * Size of RFU 1 field
+ */
+#define CN470A_RFU1_SIZE                             3
+
+/*!
+ * Size of RFU 2 field
+ */
+#define CN470A_RFU2_SIZE                             1
+
+/*!
+ * Datarate of the beacon channel
+ */
+#define CN470A_BEACON_CHANNEL_DR                     DR_2
+
+/*!
+ * Bandwith of the beacon channel
+ */
+#define CN470A_BEACON_CHANNEL_BW                     0
+
+
 /*!
  * LoRaMac maximum number of bands
  */
@@ -196,7 +240,7 @@
  * Band 0 definition
  * { DutyCycle, TxMaxPower, LastTxDoneTime, TimeOff }
  */
-#define CN470A_BAND0                                 { 1, CN470A_MAX_TX_POWER, 0,  0 }
+#define CN470A_BAND0                                 { 1, CN470A_MAX_TX_POWER, 0,  0, 0 }
 
 /*!
  * LoRaMac default channel 1
@@ -499,6 +543,12 @@ void RegionCN470ASetContinuousWave( ContinuousWaveParams_t* continuousWave );
  */
 uint8_t RegionCN470AApplyDrOffset( uint8_t downlinkDwellTime, int8_t dr, int8_t drOffset );
 
+/*!
+ * \brief Sets the radio into beacon reception mode
+ *
+ * \param [IN] rxBeaconSetup Pointer to the function parameters
+ */
+ void RegionCN470ARxBeaconSetup( RxBeaconSetup_t* rxBeaconSetup, uint8_t* outDr );
 /*! \} defgroup REGIONCN470A */
 
 #endif // __REGION_CN470A_H__

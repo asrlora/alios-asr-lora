@@ -50,6 +50,12 @@
 #ifndef __LORAMAC_H__
 #define __LORAMAC_H__
 
+#include <stdint.h>
+#include <stdbool.h>
+#include "timer.h"
+#include "radio.h"
+#include "timeServer.h"
+
 #ifdef CONFIG_LINKWAN
 #include "linkwan.h"
 #endif
@@ -84,6 +90,11 @@
  * Mainly indicates the MIC field length
  */
 #define LORAMAC_MFR_LEN                             4
+
+/*!
+ * LoRaMac MLME-Confirm queue length
+ */
+#define LORA_MAC_MLME_CONFIRM_QUEUE_LEN             5
 
 /*!
  * FRMPayload overhead to be used when setting the Radio.SetMaxPayloadLength
@@ -226,6 +237,33 @@ typedef struct sRx2ChannelParams {
 } Rx2ChannelParams_t;
 
 /*!
+ * LoRaMAC receive window enumeration
+ */
+typedef enum eLoRaMacRxSlot
+{
+    /*!
+     * LoRaMAC receive window 1
+     */
+    RX_SLOT_WIN_1,
+    /*!
+     * LoRaMAC receive window 2
+     */
+    RX_SLOT_WIN_2,
+    /*!
+     * LoRaMAC receive window 2 for class c - continuous listening
+     */
+    RX_SLOT_WIN_CLASS_C,
+    /*!
+     * LoRaMAC class b ping slot window
+     */
+    RX_SLOT_WIN_PING_SLOT,
+    /*!
+     * LoRaMAC class b multicast slot window
+     */
+    RX_SLOT_WIN_MULTICAST_SLOT,
+}LoRaMacRxSlot_t;
+
+/*!
  * Global MAC layer parameters
  */
 typedef struct sLoRaMacParams {
@@ -296,6 +334,10 @@ typedef struct sLoRaMacParams {
      * Antenna gain of the node
      */
     float AntennaGain;
+    /*!
+     * Indicates if the node supports repeaters
+     */
+    bool RepeaterSupport;
 
 #ifdef CONFIG_LINKWAN
     join_method_t method;
@@ -325,7 +367,41 @@ typedef struct sMulticastParams {
      */
     uint32_t DownLinkCounter;
     /*!
+     * Reception frequency of the ping slot windows
+     */
+    uint32_t Frequency;
+    /*!
+     * Datarate of the ping slot
+     */
+    int8_t Datarate;
+    /*!
+     * This parameter is necessary for class b operation. It defines the
+     * periodicity of the multicast downlink slots
+     */
+    uint16_t Periodicity;
+    /*!
+     * Number of multicast slots. The variable can be
+     * calculated as follows:
+     * PingNb = 128 / ( 1 << periodicity ), where
+     * 0 <= periodicity <= 7
+     * This parameter will be calculated automatically.
+     */
+    uint8_t PingNb;
+    /*!
+     * Period of the multicast slots. The variable can be
+     * calculated as follows:
+     * PingPeriod = 4096 / PingNb
+     * This parameter will be calculated automatically.
+     */
+    uint16_t PingPeriod;
+    /*!
+     * Ping offset of the multicast channel for Class B
+     * This parameter will be calculated automatically.
+     */
+    uint16_t PingOffset;
+    /*!
      * Reference pointer to the next multicast channel parameters in the list
+     * This parameter will be calculated automatically.
      */
     struct sMulticastParams *Next;
 } MulticastParams_t;
@@ -411,7 +487,27 @@ typedef enum eLoRaMacMoteCmd {
     /*!
      * DlChannelAns
      */
-    MOTE_MAC_DL_CHANNEL_ANS          = 0x0A
+    MOTE_MAC_DL_CHANNEL_ANS          = 0x0A,
+    /*!
+     * DeviceTimeReq
+     */
+    MOTE_MAC_DEVICE_TIME_REQ         = 0x0D,
+    /*!
+     * PingSlotInfoReq
+     */
+    MOTE_MAC_PING_SLOT_INFO_REQ      = 0x10,
+    /*!
+     * PingSlotFreqAns
+     */
+    MOTE_MAC_PING_SLOT_FREQ_ANS      = 0x11,
+    /*!
+     * BeaconTimingReq
+     */
+    MOTE_MAC_BEACON_TIMING_REQ       = 0x12,
+    /*!
+     * BeaconFreqAns
+     */
+    MOTE_MAC_BEACON_FREQ_ANS         = 0x13,
 } LoRaMacMoteCmd_t;
 
 /*!
@@ -456,6 +552,26 @@ typedef enum eLoRaMacSrvCmd {
      * DlChannelReq
      */
     SRV_MAC_DL_CHANNEL_REQ           = 0x0A,
+    /*!
+     * DeviceTimeAns
+     */
+    SRV_MAC_DEVICE_TIME_ANS          = 0x0D,
+    /*!
+     * PingSlotInfoAns
+     */
+    SRV_MAC_PING_SLOT_INFO_ANS       = 0x10,
+    /*!
+     * PingSlotChannelReq
+     */
+    SRV_MAC_PING_SLOT_CHANNEL_REQ    = 0x11,
+    /*!
+     * BeaconTimingAns
+     */
+    SRV_MAC_BEACON_TIMING_ANS        = 0x12,
+    /*!
+     * BeaconFreqReq
+     */
+    SRV_MAC_BEACON_FREQ_REQ          = 0x13,
 } LoRaMacSrvCmd_t;
 
 /*!
@@ -547,6 +663,79 @@ typedef union uLoRaMacFrameCtrl {
 } LoRaMacFrameCtrl_t;
 
 /*!
+ * LoRaMAC data structure for a PingSlotInfoReq \ref MLME_PING_SLOT_INFO
+ *
+ * LoRaWAN Specification
+ */
+typedef union uPingSlotInfo
+{
+    /*!
+     * Parameter for byte access
+     */
+    uint8_t Value;
+    /*!
+     * Structure containing the parameters for the PingSlotInfoReq
+     */
+    struct sInfoFields
+    {
+        /*!
+         * Periodicity = 0: ping slot every second
+         * Periodicity = 7: ping slot every 128 seconds
+         */
+        uint8_t Periodicity     : 3;
+        /*!
+         * RFU
+         */
+        uint8_t RFU             : 5;
+    }Fields;
+}PingSlotInfo_t;
+
+/*!
+ * LoRaMAC data structure for the \ref MLME_BEACON MLME-Indication
+ *
+ * LoRaWAN Specification
+ */
+typedef struct sBeaconInfo
+{
+    /*!
+     * Timestamp in seconds since 00:00:00, Sunday 6th of January 1980
+     * (start of the GPS epoch) modulo 2^32
+     */
+    uint32_t Time;
+    /*!
+     * Frequency
+     */
+    uint32_t Frequency;
+    /*!
+     * Datarate
+     */
+    uint8_t Datarate;
+    /*!
+     * RSSI
+     */
+    int16_t Rssi;
+    /*!
+     * SNR
+     */
+    uint8_t Snr;
+    /*!
+     * Data structure for the gateway specific part. The
+     * content of the values may differ for each gateway
+     */
+    struct sGwSpecific
+    {
+        /*!
+         * Info descriptor - can differ for each gateway
+         */
+        uint8_t InfoDesc;
+        /*!
+         * Info - can differ for each gateway
+         */
+        uint8_t Info[6];
+    }GwSpecific;
+}BeaconInfo_t;
+
+/*!
  * Enumeration containing the status of the operation of a MAC service
  */
 typedef enum eLoRaMacEventInfoStatus {
@@ -605,6 +794,22 @@ typedef enum eLoRaMacEventInfoStatus {
      * message integrity check failure
      */
     LORAMAC_EVENT_INFO_STATUS_MIC_FAIL,
+    /*!
+     * ToDo
+     */
+    LORAMAC_EVENT_INFO_STATUS_MULTICAST_FAIL,
+    /*!
+     * ToDo
+     */
+    LORAMAC_EVENT_INFO_STATUS_BEACON_LOCKED,
+    /*!
+     * ToDo
+     */
+    LORAMAC_EVENT_INFO_STATUS_BEACON_LOST,
+    /*!
+     * ToDo
+     */
+    LORAMAC_EVENT_INFO_STATUS_BEACON_NOT_FOUND,
 } LoRaMacEventInfoStatus_t;
 
 /*!
@@ -635,6 +840,10 @@ typedef union eLoRaMacFlags_t {
          * MLME-Req pending
          */
         uint8_t MlmeReq         : 1;
+        /*!
+         * MLME-Ind pending
+         */
+        uint8_t MlmeInd         : 1;
         /*!
          * MAC cycle done
          */
@@ -838,9 +1047,9 @@ typedef struct sMcpsConfirm {
      */
     uint32_t UpLinkCounter;
     /*!
-     * The uplink frequency related to the frame
+     * The uplink channel related to the frame
      */
-    uint32_t UpLinkFrequency;
+    uint32_t Channel;
 } McpsConfirm_t;
 
 /*!
@@ -893,10 +1102,8 @@ typedef struct sMcpsIndication {
     int8_t Snr;
     /*!
      * Receive window
-     *
-     * [0: Rx window 1, 1: Rx window 2]
      */
-    uint8_t RxSlot;
+    LoRaMacRxSlot_t RxSlot;
     /*!
      * Set if an acknowledgement was received
      */
@@ -918,6 +1125,7 @@ typedef struct sMcpsIndication {
  * \ref MLME_JOIN        | YES     | NO         | NO       | YES
  * \ref MLME_LINK_CHECK  | YES     | NO         | NO       | YES
  * \ref MLME_TXCW        | YES     | NO         | NO       | YES
+ * \ref MLME_SCHEDULE_UPLINK    | NO      | YES        | NO       | NO
  *
  * The following table provides links to the function implementations of the
  * related MLME primitives.
@@ -926,6 +1134,7 @@ typedef struct sMcpsIndication {
  * ---------------- | :---------------------:
  * MLME-Request     | \ref LoRaMacMlmeRequest
  * MLME-Confirm     | MacMlmeConfirm in \ref LoRaMacPrimitives_t
+ * MLME-Indication  | MacMlmeIndication in \ref LoRaMacPrimitives_t
  */
 typedef enum eMlme {
     /*!
@@ -952,6 +1161,51 @@ typedef enum eMlme {
      * LoRaWAN end-device certification
      */
     MLME_TXCW_1,
+    /*!
+     * Indicates that the application shall perform an uplink as
+     * soon as possible.
+     */
+    MLME_SCHEDULE_UPLINK,
+    /*!
+     * Initiates a DeviceTimeReq
+     *
+     * LoRaWAN end-device certification
+     */
+    MLME_DEVICE_TIME,
+    /*!
+     * The MAC uses this MLME primitive to indicate a beacon reception
+     * status.
+     *
+     * LoRaWAN end-device certification
+     */
+    MLME_BEACON,
+    /*!
+     * Initiate a beacon acquisition. The MAC will search for a beacon.
+     * It will search for XX_BEACON_INTERVAL milliseconds.
+     *
+     * LoRaWAN end-device certification
+     */
+    MLME_BEACON_ACQUISITION,
+    /*!
+     * Initiates a PingSlotInfoReq
+     *
+     * LoRaWAN end-device certification
+     */
+    MLME_PING_SLOT_INFO,
+    /*!
+     * Initiates a BeaconTimingReq
+     *
+     * LoRaWAN end-device certification
+     */
+    MLME_BEACON_TIMING,
+    /*!
+     * Primitive which indicates that the beacon has been lost
+     *
+     * \remark The upper layer is required to switch the device class to ClassA
+     *
+     * LoRaWAN end-device certification
+     */
+    MLME_BEACON_LOST,
 } Mlme_t;
 
 /*!
@@ -989,6 +1243,14 @@ typedef struct sMlmeReqJoin {
 } MlmeReqJoin_t;
 
 /*!
+ * LoRaMAC MLME-Request for the ping slot info service
+ */
+typedef struct sMlmeReqPingSlotInfo
+{
+    PingSlotInfo_t PingSlot;
+}MlmeReqPingSlotInfo_t;
+
+/*!
  * LoRaMAC MLME-Request for Tx continuous wave mode
  */
 typedef struct sMlmeReqTxCw {
@@ -1023,6 +1285,10 @@ typedef struct sMlmeReq {
          * MLME-Request parameters for a join request
          */
         MlmeReqJoin_t Join;
+        /*!
+         * MLME-Request parameters for a ping slot info request
+         */
+        MlmeReqPingSlotInfo_t PingSlotInfo;
         /*!
          * MLME-Request parameters for Tx continuous mode request
          */
@@ -1069,8 +1335,36 @@ typedef struct sMlmeConfirm {
      * Provides the number of retransmissions
      */
     uint8_t NbRetries;
+    /*!
+     * The delay which we have received through the
+     * BeaconTimingAns
+     */
+    TimerTime_t BeaconTimingDelay;
+    /*!
+     * The channel of the next beacon
+     */
+    uint8_t BeaconTimingChannel;
 } MlmeConfirm_t;
 
+/*!
+ * LoRaMAC MLME-Indication primitive
+ */
+typedef struct sMlmeIndication
+{
+    /*!
+     * Holds the previously performed MLME-Request
+     */
+    Mlme_t MlmeIndication;
+    /*!
+     * Status of the operation
+     */
+    LoRaMacEventInfoStatus_t Status;
+    /*!
+     * Beacon information. Only valid for \ref MLME_BEACON,
+     * status \ref LORAMAC_EVENT_INFO_STATUS_BEACON_LOCKED
+     */
+    BeaconInfo_t BeaconInfo;
+}MlmeIndication_t;
 /*!
  * LoRa Mac Information Base (MIB)
  *
@@ -1106,7 +1400,20 @@ typedef struct sMlmeConfirm {
  * \ref MIB_MULTICAST_CHANNEL        | YES | NO
  * \ref MIB_SYSTEM_MAX_RX_ERROR      | YES | YES
  * \ref MIB_MIN_RX_SYMBOLS           | YES | YES
- * \ref MIB_ANTENNA_GAIN             | YES | YES
+ * \ref MIB_BEACON_INTERVAL                      | YES | YES
+ * \ref MIB_BEACON_RESERVED                      | YES | YES
+ * \ref MIB_BEACON_GUARD                         | YES | YES
+ * \ref MIB_BEACON_WINDOW                        | YES | YES
+ * \ref MIB_BEACON_WINDOW_SLOTS                  | YES | YES
+ * \ref MIB_PING_SLOT_WINDOW                     | YES | YES
+ * \ref MIB_BEACON_SYMBOL_TO_DEFAULT             | YES | YES
+ * \ref MIB_BEACON_SYMBOL_TO_EXPANSION_MAX       | YES | YES
+ * \ref MIB_PING_SLOT_SYMBOL_TO_EXPANSION_MAX    | YES | YES
+ * \ref MIB_BEACON_SYMBOL_TO_EXPANSION_FACTOR    | YES | YES
+ * \ref MIB_PING_SLOT_SYMBOL_TO_EXPANSION_FACTOR | YES | YES
+ * \ref MIB_MAX_BEACON_LESS_PERIOD               | YES | YES
+ * \ref MIB_ANTENNA_GAIN                         | YES | YES
+ * \ref MIB_DEFAULT_ANTENNA_GAIN                 | YES | YES
  * \ref MIB_FREQ_BAND                | YES | NO
  *
  * The following table provides links to the function implementations of the
@@ -1296,6 +1603,7 @@ typedef enum eMib {
      * NULL, the list is empty.
      */
     MIB_MULTICAST_CHANNEL,
+    MIB_MULTICAST_CHANNEL_DEL,
     /*!
      * System overall timing error in milliseconds.
      * [-SystemMaxRxError : +SystemMaxRxError]
@@ -1314,6 +1622,71 @@ typedef enum eMib {
      * radioTxPower = ( int8_t )floor( maxEirp - antennaGain )
      */
     MIB_ANTENNA_GAIN,
+    /*!
+     * Default antenna gain of the node. Default value is region specific.
+     * The antenna gain is used to calculate the TX power of the node.
+     * The formula is:
+     * radioTxPower = ( int8_t )floor( maxEirp - antennaGain )
+     */
+    MIB_DEFAULT_ANTENNA_GAIN,
+    /*!
+     * Beacon interval in ms
+     */
+    MIB_BEACON_INTERVAL,
+    /*!
+     * Beacon reserved time in ms
+     */
+    MIB_BEACON_RESERVED,
+    /*!
+     * Beacon guard time in ms
+     */
+    MIB_BEACON_GUARD,
+    /*!
+     * Beacon window time in ms
+     */
+    MIB_BEACON_WINDOW,
+    /*!
+     * Beacon window time in number of slots
+     */
+    MIB_BEACON_WINDOW_SLOTS,
+    /*!
+     * Ping slot length time in ms
+     */
+    MIB_PING_SLOT_WINDOW,
+    /*!
+     * Default symbol timeout for beacons and ping slot windows
+     */
+    MIB_BEACON_SYMBOL_TO_DEFAULT,
+    /*!
+     * Maximum symbol timeout for beacons
+     */
+    MIB_BEACON_SYMBOL_TO_EXPANSION_MAX,
+    /*!
+     * Maximum symbol timeout for ping slots
+     */
+    MIB_PING_SLOT_SYMBOL_TO_EXPANSION_MAX,
+    /*!
+     * Symbol expansion value for beacon windows in case of beacon
+     * loss in symbols
+     */
+    MIB_BEACON_SYMBOL_TO_EXPANSION_FACTOR,
+    /*!
+     * Symbol expansion value for ping slot windows in case of beacon
+     * loss in symbols
+     */
+    MIB_PING_SLOT_SYMBOL_TO_EXPANSION_FACTOR,
+    /*!
+     * Maximum allowed beacon less time in ms
+     */
+    MIB_MAX_BEACON_LESS_PERIOD,
+    /*!
+     * Ping slot data rate
+     *
+     * LoRaWAN Regional Parameters V1.0.2rB
+     *
+     * The allowed ranges are region specific. Please refer to \ref DR_0 to \ref DR_15 for details.
+     */
+     MIB_PING_SLOT_DATARATE,
 #ifdef CONFIG_LINKWAN
     MIB_FREQ_BAND
 #endif
@@ -1503,6 +1876,92 @@ typedef union uMibParam {
      * Related MIB type: \ref MIB_ANTENNA_GAIN
      */
     float AntennaGain;
+    /*!
+     * Default antenna gain
+     *
+     * Related MIB type: \ref MIB_DEFAULT_ANTENNA_GAIN
+     */
+    float DefaultAntennaGain;
+    /*!
+     * Beacon interval in ms
+     *
+     * Related MIB type: \ref MIB_BEACON_INTERVAL
+     */
+    uint32_t BeaconInterval;
+    /*!
+     * Beacon reserved time in ms
+     *
+     * Related MIB type: \ref MIB_BEACON_RESERVED
+     */
+    uint32_t BeaconReserved;
+    /*!
+     * Beacon guard time in ms
+     *
+     * Related MIB type: \ref MIB_BEACON_GUARD
+     */
+    uint32_t BeaconGuard;
+    /*!
+     * Beacon window time in ms
+     *
+     * Related MIB type: \ref MIB_BEACON_WINDOW
+     */
+    uint32_t BeaconWindow;
+    /*!
+     * Beacon window time in number of slots
+     *
+     * Related MIB type: \ref MIB_BEACON_WINDOW_SLOTS
+     */
+    uint32_t BeaconWindowSlots;
+    /*!
+     * Ping slot length time in ms
+     *
+     * Related MIB type: \ref MIB_PING_SLOT_WINDOW
+     */
+    uint32_t PingSlotWindow;
+    /*!
+     * Default symbol timeout for beacons and ping slot windows
+     *
+     * Related MIB type: \ref MIB_BEACON_SYMBOL_TO_DEFAULT
+     */
+    uint32_t BeaconSymbolToDefault;
+    /*!
+     * Maximum symbol timeout for beacons
+     *
+     * Related MIB type: \ref MIB_BEACON_SYMBOL_TO_EXPANSION_MAX
+     */
+    uint32_t BeaconSymbolToExpansionMax;
+    /*!
+     * Maximum symbol timeout for ping slots
+     *
+     * Related MIB type: \ref MIB_PING_SLOT_SYMBOL_TO_EXPANSION_MAX
+     */
+    uint32_t PingSlotSymbolToExpansionMax;
+    /*!
+     * Symbol expansion value for beacon windows in case of beacon
+     * loss in symbols
+     *
+     * Related MIB type: \ref MIB_BEACON_SYMBOL_TO_EXPANSION_FACTOR
+     */
+    uint32_t BeaconSymbolToExpansionFactor;
+    /*!
+     * Symbol expansion value for ping slot windows in case of beacon
+     * loss in symbols
+     *
+     * Related MIB type: \ref MIB_PING_SLOT_SYMBOL_TO_EXPANSION_FACTOR
+     */
+    uint32_t PingSlotSymbolToExpansionFactor;
+    /*!
+     * Maximum allowed beacon less time in ms
+     *
+     * Related MIB type: \ref MIB_MAX_BEACON_LESS_PERIOD
+     */
+    uint32_t MaxBeaconLessPeriod;
+    /*!
+     * Ping slots data rate
+     *
+     * Related MIB type: \ref MIB_PING_SLOT_DATARATE
+     */
+    int8_t PingSlotDatarate;
 #ifdef CONFIG_LINKWAN
     uint32_t freqband;
 #endif
@@ -1585,7 +2044,31 @@ typedef enum eLoRaMacStatus {
      * Service not started - the specified region is not supported
      * or not activated with preprocessor definitions.
      */
-    LORAMAC_STATUS_REGION_NOT_SUPPORTED
+    LORAMAC_STATUS_REGION_NOT_SUPPORTED,
+    /*!
+     * ToDo
+     */
+    LORAMAC_STATUS_DUTYCYCLE_RESTRICTED,
+     /*!
+      * ToDo
+      */
+    LORAMAC_STATUS_NO_CHANNEL_FOUND,
+     /*!
+      * ToDo
+      */
+    LORAMAC_STATUS_NO_FREE_CHANNEL_FOUND,
+     /*!
+      * ToDo
+      */
+    LORAMAC_STATUS_BUSY_BEACON_RESERVED_TIME,
+     /*!
+      * ToDo
+      */
+    LORAMAC_STATUS_BUSY_PING_SLOT_WINDOW_TIME,
+     /*!
+      * ToDo
+      */
+    LORAMAC_STATUS_BUSY_UPLINK_COLLISION
 } LoRaMacStatus_t;
 
 /*!
@@ -1663,6 +2146,12 @@ typedef struct sLoRaMacPrimitives {
      * \param   [OUT] MLME-Confirm parameters
      */
     void ( *MacMlmeConfirm )( MlmeConfirm_t *MlmeConfirm );
+    /*!
+     * \brief   MLME-Indication primitive
+     *
+     * \param   [OUT] MLME-Indication parameters
+     */
+    void ( *MacMlmeIndication )( MlmeIndication_t *MlmeIndication );
 } LoRaMacPrimitives_t;
 
 /*!
@@ -1678,6 +2167,12 @@ typedef struct sLoRaMacCallback {
      *          to measure the battery level]
      */
     uint8_t ( *GetBatteryLevel )( void );
+    /*!
+     * \brief   Measures the temperature level
+     *
+     * \retval  Temperature level
+     */
+    float ( *GetTemperatureLevel )( void );
 } LoRaMacCallback_t;
 
 /*!
@@ -1937,6 +2432,9 @@ LoRaMacStatus_t LoRaMacMlmeRequest( MlmeReq_t *mlmeRequest );
  *          \ref LORAMAC_STATUS_DEVICE_OFF.
  */
 LoRaMacStatus_t LoRaMacMcpsRequest( McpsReq_t *mcpsRequest );
+
+
+#include "region/Region.h"
 
 /*! \} defgroup LORAMAC */
 

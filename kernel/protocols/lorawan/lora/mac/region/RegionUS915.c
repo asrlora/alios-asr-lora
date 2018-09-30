@@ -289,6 +289,34 @@ PhyParam_t RegionUS915GetPhyParam( GetPhyParams_t* getPhy )
             phyParam.Value = 2;
             break;
         }
+
+        case PHY_BEACON_CHANNEL_FREQ:
+        {
+            phyParam.Value = US915_BEACON_CHANNEL_FREQ;
+            break;
+        }
+        case PHY_BEACON_FORMAT:
+        {
+            phyParam.BeaconFormat.BeaconSize = US915_BEACON_SIZE;
+            phyParam.BeaconFormat.Rfu1Size = US915_RFU1_SIZE;
+            phyParam.BeaconFormat.Rfu2Size = US915_RFU2_SIZE;
+            break;
+        }
+        case PHY_BEACON_CHANNEL_DR:
+        {
+            phyParam.Value = US915_BEACON_CHANNEL_DR;
+            break;
+        }
+        case PHY_BEACON_CHANNEL_STEPWIDTH:
+        {
+            phyParam.Value = US915_BEACON_CHANNEL_STEPWIDTH;
+            break;
+        }
+        case PHY_BEACON_NB_CHANNELS:
+        {
+            phyParam.Value = US915_BEACON_NB_CHANNELS;
+            break;
+        }
         default:
         {
             break;
@@ -519,7 +547,7 @@ void RegionUS915ComputeRxWindowParameters( int8_t datarate, uint8_t minRxSymbols
         tSymbol = RegionCommonComputeSymbolTimeLoRa( DataratesUS915[datarate], BandwidthsUS915[datarate] );
     }
 
-    radioWakeUpTime = Radio.GetRadioWakeUpTime( );
+    radioWakeUpTime = Radio.GetWakeupTime( );
     RegionCommonComputeRxWindowParameters( tSymbol, minRxSymbols, rxError, radioWakeUpTime, &rxConfigParams->WindowTimeout, &rxConfigParams->WindowOffset );
 }
 
@@ -535,7 +563,7 @@ bool RegionUS915RxConfig( RxConfigParams_t* rxConfig, int8_t* datarate )
         return false;
     }
 
-    if( rxConfig->Window == 0 )
+    if( rxConfig->RxSlot == RX_SLOT_WIN_1 )
     {
         // Apply window 1 frequency
         frequency = US915_FIRST_RX1_CHANNEL + ( rxConfig->Channel % 8 ) * US915_STEPWIDTH_RX1_CHANNEL;
@@ -558,7 +586,7 @@ bool RegionUS915RxConfig( RxConfigParams_t* rxConfig, int8_t* datarate )
         maxPayload = MaxPayloadOfDatarateUS915[dr];
     }
     Radio.SetMaxPayloadLength( MODEM_LORA, maxPayload + LORA_MAC_FRMPAYLOAD_OVERHEAD );
-    DBG_PRINTF("RX on freq %d Hz at DR %d\n\r", frequency, dr);
+    DBG_PRINTF("RX on freq %u Hz at DR %d\n\r", (unsigned int)frequency, dr);
 
     *datarate = (uint8_t) dr;
     return true;
@@ -578,7 +606,7 @@ bool RegionUS915TxConfig( TxConfigParams_t* txConfig, int8_t* txPower, TimerTime
 
     Radio.SetMaxPayloadLength( MODEM_LORA, txConfig->PktLen );
     Radio.SetTxConfig( MODEM_LORA, phyTxPower, 0, bandwidth, phyDr, 1, 8, false, true, 0, 0, false, 3e3 );
-    DBG_PRINTF("TX on freq %d Hz at DR %d\n\r", Channels[txConfig->Channel].Frequency, txConfig->Datarate);
+    DBG_PRINTF("TX on freq %u Hz at DR %d\n\r", (unsigned int)Channels[txConfig->Channel].Frequency, txConfig->Datarate);
 
     *txTimeOnAir = Radio.TimeOnAir( MODEM_LORA,  txConfig->PktLen );
     *txPower = txPowerLimited;
@@ -876,4 +904,22 @@ uint8_t RegionUS915ApplyDrOffset( uint8_t downlinkDwellTime, int8_t dr, int8_t d
         datarate = DR_0;
     }
     return datarate;
+}
+
+void RegionUS915RxBeaconSetup( RxBeaconSetup_t* rxBeaconSetup, uint8_t* outDr )
+{
+    RegionCommonRxBeaconSetupParams_t regionCommonRxBeaconSetup;
+
+    regionCommonRxBeaconSetup.Datarates = DataratesUS915;
+    regionCommonRxBeaconSetup.Frequency = rxBeaconSetup->Frequency;
+    regionCommonRxBeaconSetup.BeaconSize = US915_BEACON_SIZE;
+    regionCommonRxBeaconSetup.BeaconDatarate = US915_BEACON_CHANNEL_DR;
+    regionCommonRxBeaconSetup.BeaconChannelBW = US915_BEACON_CHANNEL_BW;
+    regionCommonRxBeaconSetup.RxTime = rxBeaconSetup->RxTime;
+    regionCommonRxBeaconSetup.SymbolTimeout = rxBeaconSetup->SymbolTimeout;
+
+    RegionCommonRxBeaconSetup( &regionCommonRxBeaconSetup );
+
+    // Store downlink datarate
+    *outDr = US915_BEACON_CHANNEL_DR;
 }

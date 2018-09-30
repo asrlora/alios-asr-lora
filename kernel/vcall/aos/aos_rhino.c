@@ -362,9 +362,9 @@ int aos_event_get
     }
 
     if (timeout == AOS_WAIT_FOREVER) {
-        ret = krhino_event_get(event->hdl, flags, opt, actl_flags, RHINO_WAIT_FOREVER);
+        ret = krhino_event_get(event->hdl, flags, opt, (uint32_t *)actl_flags, RHINO_WAIT_FOREVER);
     } else {
-        ret = krhino_event_get(event->hdl, flags, opt, actl_flags, MS2TICK(timeout));
+        ret = krhino_event_get(event->hdl, flags, opt, (uint32_t *)actl_flags, MS2TICK(timeout));
     }
 
     if (ret == RHINO_SUCCESS) {

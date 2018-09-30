@@ -277,6 +277,28 @@ PhyParam_t RegionCN470GetPhyParam( GetPhyParams_t* getPhy )
             phyParam.Value = 48;
             break;
         }
+        case PHY_BEACON_FORMAT:
+        {
+            phyParam.BeaconFormat.BeaconSize = CN470_BEACON_SIZE;
+            phyParam.BeaconFormat.Rfu1Size = CN470_RFU1_SIZE;
+            phyParam.BeaconFormat.Rfu2Size = CN470_RFU2_SIZE;
+            break;
+        }
+        case PHY_BEACON_CHANNEL_DR:
+        {
+            phyParam.Value = CN470_BEACON_CHANNEL_DR;
+            break;
+        }
+        case PHY_BEACON_CHANNEL_STEPWIDTH:
+        {
+            phyParam.Value = CN470_BEACON_CHANNEL_STEPWIDTH;
+            break;
+        }
+        case PHY_BEACON_NB_CHANNELS:
+        {
+            phyParam.Value = CN470_BEACON_NB_CHANNELS;
+            break;
+        }
         default:
         {
             break;
@@ -484,7 +506,7 @@ bool RegionCN470RxConfig( RxConfigParams_t* rxConfig, int8_t* datarate )
         return false;
     }
 
-    if( rxConfig->Window == 0 )
+    if( rxConfig->RxSlot == RX_SLOT_WIN_1 )
     {
         // Apply window 1 frequency
         frequency = CN470_FIRST_RX1_CHANNEL + ( rxConfig->Channel % 48 ) * CN470_STEPWIDTH_RX1_CHANNEL;
@@ -529,7 +551,7 @@ bool RegionCN470TxConfig( TxConfigParams_t* txConfig, int8_t* txPower, TimerTime
     Radio.SetMaxPayloadLength( MODEM_LORA, txConfig->PktLen );
     // Get the time-on-air of the next tx frame
     *txTimeOnAir = Radio.TimeOnAir( MODEM_LORA,  txConfig->PktLen );
-    *txPower = txConfig->TxPower;
+    *txPower = txPowerLimited;
 
     return true;
 }
@@ -812,4 +834,22 @@ uint8_t RegionCN470ApplyDrOffset( uint8_t downlinkDwellTime, int8_t dr, int8_t d
         datarate = DR_0;
     }
     return datarate;
+}
+
+void RegionCN470RxBeaconSetup( RxBeaconSetup_t* rxBeaconSetup, uint8_t* outDr )
+{
+    RegionCommonRxBeaconSetupParams_t regionCommonRxBeaconSetup;
+
+    regionCommonRxBeaconSetup.Datarates = DataratesCN470;
+    regionCommonRxBeaconSetup.Frequency = rxBeaconSetup->Frequency;
+    regionCommonRxBeaconSetup.BeaconSize = CN470_BEACON_SIZE;
+    regionCommonRxBeaconSetup.BeaconDatarate = CN470_BEACON_CHANNEL_DR;
+    regionCommonRxBeaconSetup.BeaconChannelBW = CN470_BEACON_CHANNEL_BW;
+    regionCommonRxBeaconSetup.RxTime = rxBeaconSetup->RxTime;
+    regionCommonRxBeaconSetup.SymbolTimeout = rxBeaconSetup->SymbolTimeout;
+
+    RegionCommonRxBeaconSetup( &regionCommonRxBeaconSetup );
+
+    // Store downlink datarate
+    *outDr = CN470_BEACON_CHANNEL_DR;
 }

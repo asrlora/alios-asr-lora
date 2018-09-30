@@ -1,6 +1,3 @@
-/*
- * Copyright (C) 2015-2017 Alibaba Group Holding Limited
- */
 #include "project.h"
 #include <k_api.h>
 #include <assert.h>
@@ -101,9 +98,9 @@ extern uint32_t __cy_heap_end[];
 /* 
  * If need to use all rest RAM area, then need to define __cy_heap_size in linker file. 
  * But remember, regenerate code will overwrite linker file content.
- * For now, define 0x2f00 as heap size which will not overflow ram.
+ * For now, use CYDEV_HEAP_SIZE(set in "Design Wide Resources"->System->"Heap Size") as heap size.
+ * Check map file to determinie proper value
 */
-//extern uint32_t __cy_heap_size[];
 
 k_mm_region_t g_mm_region[] = {
 {

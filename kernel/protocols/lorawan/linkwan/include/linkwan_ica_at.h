@@ -48,6 +48,7 @@
 #define LORA_AT_CSAVE "+CSAVE"  // save cfg
 #define LORA_AT_CRESTORE "+CRESTORE"  // restore def cfg
 
+#define LORA_AT_PINGSLOTINFOREQ "+CPINGSLOTINFOREQ" //class B send pingSlotInfoReq  
 
 // repeater
 #define LORA_AT_CREPEATERFILTER "+CREPEATERFILTER"

@@ -39,6 +39,8 @@
 #ifndef __REGION_KR920_H__
 #define __REGION_KR920_H__
 
+#include "LoRaMac.h"
+
 /*!
  * LoRaMac maximum number of channels
  */
@@ -192,6 +194,39 @@
  * Second reception window channel datarate definition.
  */
 #define KR920_RX_WND_2_DR                           DR_0
+
+/*
+ * CLASS B
+ */
+/*!
+ * Beacon frequency
+ */
+#define KR920_BEACON_CHANNEL_FREQ                   923100000
+
+/*!
+ * Payload size of a beacon frame
+ */
+#define KR920_BEACON_SIZE                           17
+
+/*!
+ * Size of RFU 1 field
+ */
+#define KR920_RFU1_SIZE                             2
+
+/*!
+ * Size of RFU 2 field
+ */
+#define KR920_RFU2_SIZE                             0
+
+/*!
+ * Datarate of the beacon channel
+ */
+#define KR920_BEACON_CHANNEL_DR                     DR_3
+
+/*!
+ * Bandwith of the beacon channel
+ */
+#define KR920_BEACON_CHANNEL_BW                     0
 
 /*!
  * Maximum number of bands
@@ -476,6 +511,13 @@ void RegionKR920SetContinuousWave( ContinuousWaveParams_t* continuousWave );
  * \retval newDr Computed datarate.
  */
 uint8_t RegionKR920ApplyDrOffset( uint8_t downlinkDwellTime, int8_t dr, int8_t drOffset );
+
+/*!
+ * \brief Sets the radio into beacon reception mode
+ *
+ * \param [IN] rxBeaconSetup Pointer to the function parameters
+ */
+ void RegionKR920RxBeaconSetup( RxBeaconSetup_t* rxBeaconSetup, uint8_t* outDr );
 
 /*! \} defgroup REGIONKR920 */
 

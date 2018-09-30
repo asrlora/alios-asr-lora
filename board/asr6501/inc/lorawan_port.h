@@ -1,7 +1,3 @@
-/*
- * Copyright (C) 2015-2017 Alibaba Group Holding Limited
- */
-
 
 /* Define to prevent recursive inclusion -------------------------------------*/
 #ifndef __LORAWAN_PORT_H__

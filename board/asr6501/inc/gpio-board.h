@@ -1,25 +1,3 @@
-/*!
- * \file      gpio-board.h
- *
- * \brief     Target board GPIO driver implementation
- *
- * \copyright Revised BSD License, see section \ref LICENSE.
- *
- * \code
- *                ______                              _
- *               / _____)             _              | |
- *              ( (____  _____ ____ _| |_ _____  ____| |__
- *               \____ \| ___ |    (_   _) ___ |/ ___)  _ \
- *               _____) ) ____| | | || |_| ____( (___| | | |
- *              (______/|_____)_|_|_| \__)_____)\____)_| |_|
- *              (C)2013-2017 Semtech
- *
- * \endcode
- *
- * \author    Miguel Luis ( Semtech )
- *
- * \author    Gregory Cristian ( Semtech )
- */
 #ifndef __GPIO_BOARD_H__
 #define __GPIO_BOARD_H__
 
@@ -82,4 +60,6 @@ void GpioMcuToggle( Gpio_t *obj );
 uint32_t GpioMcuRead( Gpio_t *obj );
 
 void RegisterGpioCallback(Gpio_t *obj, GpioIoeIrqHandler GpioIrqCallback);
+
+
 #endif // __GPIO_BOARD_H__

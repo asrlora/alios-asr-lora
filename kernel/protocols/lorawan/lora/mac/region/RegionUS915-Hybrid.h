@@ -39,6 +39,8 @@
 #ifndef __REGION_US915_HYBRID_H__
 #define __REGION_US915_HYBRID_H__
 
+#include "LoRaMac.h"
+
 /*!
  * LoRaMac maximum number of channels
  */
@@ -168,6 +170,49 @@
  * Second reception window channel datarate definition.
  */
 #define US915_HYBRID_RX_WND_2_DR                    DR_8
+
+/*
+ * CLASS B
+ */
+/*!
+ * Beacon frequency
+ */
+ #define US915_HYBRID_BEACON_CHANNEL_FREQ           923300000
+
+/*!
+ * Beacon frequency channel stepwidth
+ */
+ #define US915_HYBRID_BEACON_CHANNEL_STEPWIDTH      600000
+
+/*!
+ * Number of possible beacon channels
+ */
+ #define US915_HYBRID_BEACON_NB_CHANNELS            8
+
+/*!
+ * Payload size of a beacon frame
+ */
+ #define US915_HYBRID_BEACON_SIZE                   23
+
+/*!
+ * Size of RFU 1 field
+ */
+#define US915_HYBRID_RFU1_SIZE                      5
+
+/*!
+ * Size of RFU 2 field
+ */
+#define US915_HYBRID_RFU2_SIZE                      3
+
+/*!
+ * Datarate of the beacon channel
+ */
+ #define US915_HYBRID_BEACON_CHANNEL_DR             DR_8
+
+/*!
+ * Bandwith of the beacon channel
+ */
+ #define US915_HYBRID_BEACON_CHANNEL_BW             2
 
 /*!
  * LoRaMac maximum number of bands
@@ -446,6 +491,13 @@ void RegionUS915HybridSetContinuousWave( ContinuousWaveParams_t* continuousWave 
  * \retval newDr Computed datarate.
  */
 uint8_t RegionUS915HybridApplyDrOffset( uint8_t downlinkDwellTime, int8_t dr, int8_t drOffset );
+
+/*!
+ * \brief Sets the radio into beacon reception mode
+ *
+ * \param [IN] rxBeaconSetup Pointer to the function parameters
+ */
+ void RegionUS915HybridRxBeaconSetup( RxBeaconSetup_t* rxBeaconSetup, uint8_t* outDr );
 
 /*! \} defgroup REGIONUS915HYB */
 

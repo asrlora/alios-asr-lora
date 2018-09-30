@@ -651,17 +651,91 @@ typedef enum ePhyAttribute {
      */
     PHY_DEF_ANTENNA_GAIN,
     /*!
+     * Next lower datarate.
+     */
+    PHY_NEXT_LOWER_TX_DR,
+    /*!
+     * Beacon interval in ms.
+     */
+    PHY_BEACON_INTERVAL,
+    /*!
+     * Beacon reserved time in ms.
+     */
+    PHY_BEACON_RESERVED,
+    /*!
+     * Beacon guard time in ms.
+     */
+    PHY_BEACON_GUARD,
+    /*!
+     * Beacon window time in ms.
+     */
+    PHY_BEACON_WINDOW,
+    /*!
+     * Beacon window time in numer of slots.
+     */
+    PHY_BEACON_WINDOW_SLOTS,
+    /*!
+     * Ping slot length time in ms.
+     */
+    PHY_PING_SLOT_WINDOW,
+    /*!
+     * Default symbol timeout for beacons and ping slot windows.
+     */
+    PHY_BEACON_SYMBOL_TO_DEFAULT,
+    /*!
+     * Maximum symbol timeout for beacons.
+     */
+    PHY_BEACON_SYMBOL_TO_EXPANSION_MAX,
+    /*!
+     * Maximum symbol timeout for ping slots.
+     */
+    PHY_PING_SLOT_SYMBOL_TO_EXPANSION_MAX,
+    /*!
+     * Symbol expansion value for beacon windows in case of beacon
+     * loss in symbols.
+     */
+    PHY_BEACON_SYMBOL_TO_EXPANSION_FACTOR,
+    /*!
+     * Symbol expansion value for ping slot windows in case of beacon
+     * loss in symbols.
+     */
+    PHY_PING_SLOT_SYMBOL_TO_EXPANSION_FACTOR,
+    /*!
+     * Maximum allowed beacon less time in ms.
+     */
+    PHY_MAX_BEACON_LESS_PERIOD,
+    /*!
+     * Delay time for the BeaconTimingAns in ms.
+     */
+    PHY_BEACON_DELAY_BEACON_TIMING_ANS,
+    /*!
+     * Beacon channel frequency.
+     */
+    PHY_BEACON_CHANNEL_FREQ,
+    /*!
+     * The format of the beacon.
+     */
+    PHY_BEACON_FORMAT,
+    /*!
+     * The beacon channel datarate.
+     */
+    PHY_BEACON_CHANNEL_DR,
+    /*!
+     * The frequency stepwidth between the beacon channels.
+     */
+    PHY_BEACON_CHANNEL_STEPWIDTH,
+    /*!
+     * The number of channels for the beacon reception.
+     */
+    PHY_BEACON_NB_CHANNELS,
+    /*!
      * Value for the number of join trials.
      */
     PHY_NB_JOIN_TRIALS,
     /*!
      * Default value for the number of join trials.
      */
-    PHY_DEF_NB_JOIN_TRIALS,
-    /*!
-     * Next lower datarate.
-     */
-    PHY_NEXT_LOWER_TX_DR
+    PHY_DEF_NB_JOIN_TRIALS
 } PhyAttribute_t;
 
 /*!
@@ -675,7 +749,12 @@ typedef enum eInitType {
     /*!
      * Restores default channels only.
      */
-    INIT_TYPE_RESTORE
+    INIT_TYPE_RESTORE,
+    /*!
+     * Initializes the region specific data to the defaults which were set by
+     * the application.
+     */
+    INIT_TYPE_APP_DEFAULTS
 } InitType_t;
 
 typedef enum eChannelsMask {
@@ -688,6 +767,25 @@ typedef enum eChannelsMask {
      */
     CHANNELS_DEFAULT_MASK
 } ChannelsMask_t;
+
+/*!
+ * Structure containing the beacon format
+ */
+typedef struct sBeaconFormat
+{
+    /*!
+     * Size of the beacon
+     */
+    uint8_t BeaconSize;
+    /*!
+     * Size of the RFU 1 data field
+     */
+    uint8_t Rfu1Size;
+    /*!
+     * Size of the RFU 2 data field
+     */
+    uint8_t Rfu2Size;
+}BeaconFormat_t;
 
 /*!
  * Union for the structure uGetPhyParams
@@ -709,6 +807,10 @@ typedef union uPhyParam {
      * Pointer to the channels.
      */
     ChannelParams_t *Channels;
+    /*!
+     * Beacon format
+     */
+    BeaconFormat_t BeaconFormat;
 } PhyParam_t;
 
 /*!
@@ -895,9 +997,9 @@ typedef struct sRxConfigParams {
      */
     bool RxContinuous;
     /*!
-     * Sets the RX window. 0: RX window 1, 1: RX window 2.
+     * Sets the RX window.
      */
-    bool Window;
+    LoRaMacRxSlot_t RxSlot;
 #ifdef CONFIG_LINKWAN
     /*!
      * Node current Work Mode
@@ -1179,6 +1281,25 @@ typedef struct sContinuousWaveParams {
      */
     uint16_t Timeout;
 } ContinuousWaveParams_t;
+
+/*!
+ * Parameter structure for the function RegionRxBeaconSetup
+ */
+typedef struct sRxBeaconSetupParams
+{
+    /*!
+     * Symbol timeout.
+     */
+    uint16_t SymbolTimeout;
+    /*!
+     * Receive time.
+     */
+    uint32_t RxTime;
+    /*!
+     * The frequency to setup.
+     */
+    uint32_t Frequency;
+}RxBeaconSetup_t;
 
 
 
@@ -1495,6 +1616,15 @@ void RegionSetContinuousWave( LoRaMacRegion_t region, ContinuousWaveParams_t *co
  * \retval newDr Computed datarate.
  */
 uint8_t RegionApplyDrOffset( LoRaMacRegion_t region, uint8_t downlinkDwellTime, int8_t dr, int8_t drOffset );
+
+/*!
+ * \brief Sets the radio into beacon reception mode
+ *
+ * \param [IN] rxBeaconSetup Pointer to the function parameters
+ *
+ * \param [out] outDr Datarate used to receive the beacon
+ */
+void RegionRxBeaconSetup( LoRaMacRegion_t region, RxBeaconSetup_t* rxBeaconSetup, uint8_t* outDr );
 
 /*! \} defgroup REGION */
 

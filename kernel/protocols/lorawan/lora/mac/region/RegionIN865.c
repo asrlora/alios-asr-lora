@@ -303,6 +303,23 @@ PhyParam_t RegionIN865GetPhyParam( GetPhyParams_t* getPhy )
             phyParam.Value = 48;
             break;
         }
+        case PHY_BEACON_CHANNEL_FREQ:
+        {
+            phyParam.Value = IN865_BEACON_CHANNEL_FREQ;
+            break;
+        }
+        case PHY_BEACON_FORMAT:
+        {
+            phyParam.BeaconFormat.BeaconSize = IN865_BEACON_SIZE;
+            phyParam.BeaconFormat.Rfu1Size = IN865_RFU1_SIZE;
+            phyParam.BeaconFormat.Rfu2Size = IN865_RFU2_SIZE;
+            break;
+        }
+        case PHY_BEACON_CHANNEL_DR:
+        {
+            phyParam.Value = IN865_BEACON_CHANNEL_DR;
+            break;
+        }
         default:
         {
             break;
@@ -537,7 +554,7 @@ void RegionIN865ComputeRxWindowParameters( int8_t datarate, uint8_t minRxSymbols
         tSymbol = RegionCommonComputeSymbolTimeLoRa( DataratesIN865[datarate], BandwidthsIN865[datarate] );
     }
 
-    radioWakeUpTime = Radio.GetRadioWakeUpTime( );
+    radioWakeUpTime = Radio.GetWakeupTime( );
     RegionCommonComputeRxWindowParameters( tSymbol, minRxSymbols, rxError, radioWakeUpTime, &rxConfigParams->WindowTimeout, &rxConfigParams->WindowOffset );
 }
 
@@ -554,7 +571,7 @@ bool RegionIN865RxConfig( RxConfigParams_t* rxConfig, int8_t* datarate )
         return false;
     }
 
-    if( rxConfig->Window == 0 )
+    if( rxConfig->RxSlot == RX_SLOT_WIN_1 )
     {
         // Apply window 1 frequency
         frequency = Channels[rxConfig->Channel].Frequency;
@@ -591,7 +608,7 @@ bool RegionIN865RxConfig( RxConfigParams_t* rxConfig, int8_t* datarate )
         maxPayload = MaxPayloadOfDatarateIN865[dr];
     }
     Radio.SetMaxPayloadLength( modem, maxPayload + LORA_MAC_FRMPAYLOAD_OVERHEAD );
-    DBG_PRINTF("RX on freq %d Hz at DR %d\n\r", frequency, dr);
+    DBG_PRINTF("RX on freq %u Hz at DR %d\n\r", (unsigned int)frequency, dr);
 
     *datarate = (uint8_t) dr;
     return true;
@@ -621,7 +638,7 @@ bool RegionIN865TxConfig( TxConfigParams_t* txConfig, int8_t* txPower, TimerTime
         modem = MODEM_LORA;
         Radio.SetTxConfig( modem, phyTxPower, 0, bandwidth, phyDr, 1, 8, false, true, 0, 0, false, 3e3 );
     }
-    DBG_PRINTF("TX on freq %d Hz at DR %d\n\r", Channels[txConfig->Channel].Frequency, txConfig->Datarate);
+    DBG_PRINTF("TX on freq %u Hz at DR %d\n\r", (unsigned int)Channels[txConfig->Channel].Frequency, txConfig->Datarate);
     // Setup maximum payload lenght of the radio driver
     Radio.SetMaxPayloadLength( modem, txConfig->PktLen );
     // Get the time-on-air of the next tx frame
@@ -1060,4 +1077,22 @@ uint8_t RegionIN865ApplyDrOffset( uint8_t downlinkDwellTime, int8_t dr, int8_t d
 {
     // Apply offset formula
     return MIN( DR_5, MAX( DR_0, dr - EffectiveRx1DrOffsetIN865[drOffset] ) );
+}
+
+void RegionIN865RxBeaconSetup( RxBeaconSetup_t* rxBeaconSetup, uint8_t* outDr )
+{
+    RegionCommonRxBeaconSetupParams_t regionCommonRxBeaconSetup;
+
+    regionCommonRxBeaconSetup.Datarates = DataratesIN865;
+    regionCommonRxBeaconSetup.Frequency = rxBeaconSetup->Frequency;
+    regionCommonRxBeaconSetup.BeaconSize = IN865_BEACON_SIZE;
+    regionCommonRxBeaconSetup.BeaconDatarate = IN865_BEACON_CHANNEL_DR;
+    regionCommonRxBeaconSetup.BeaconChannelBW = IN865_BEACON_CHANNEL_BW;
+    regionCommonRxBeaconSetup.RxTime = rxBeaconSetup->RxTime;
+    regionCommonRxBeaconSetup.SymbolTimeout = rxBeaconSetup->SymbolTimeout;
+
+    RegionCommonRxBeaconSetup( &regionCommonRxBeaconSetup );
+
+    // Store downlink datarate
+    *outDr = IN865_BEACON_CHANNEL_DR;
 }

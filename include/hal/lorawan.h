@@ -31,9 +31,9 @@ typedef struct
 typedef struct 
 {
     void (*delay_ms)(uint32_t delay);
-    uint32_t (*set_timer_context)(void);
-    uint32_t (*get_timer_context)(void);
-    uint32_t (*get_timer_elapsed_time)(void);
+    TimerTime_t (*set_timer_context)(void);
+    TimerTime_t (*get_timer_context)(void);
+    TimerTime_t (*get_timer_elapsed_time)(void);
     void (*stop_alarm)(void);
     void (*set_alarm)(uint32_t timeout);
     void (*set_uc_wakeup_time)(void);
@@ -41,7 +41,8 @@ typedef struct
     TimerTime_t (*compute_elapsed_time)(TimerTime_t time);
     TimerTime_t (*get_current_time)(void );
     void (*set_timer_val)(TimerEvent_t *obj, uint32_t value);
-    
+    uint32_t (*get_sys_time)( uint16_t *subSeconds );
+    void (*set_sys_time)( uint32_t seconds, uint16_t subSeconds );
 } hal_lrwan_time_itf_t;
 
 /* the struct is for control of radio */
