@@ -39,6 +39,8 @@
 #ifndef __REGION_IN865_H__
 #define __REGION_IN865_H__
 
+#include "LoRaMac.h"
+
 /*!
  * LoRaMac maximum number of channels
  */
@@ -187,6 +189,39 @@
  * Second reception window channel datarate definition.
  */
 #define IN865_RX_WND_2_DR                           DR_2
+
+/*
+ * CLASS B
+ */
+/*!
+ * Beacon frequency
+ */
+#define IN865_BEACON_CHANNEL_FREQ                   866550000
+
+/*!
+ * Payload size of a beacon frame
+ */
+#define IN865_BEACON_SIZE                           19
+
+/*!
+ * Size of RFU 1 field
+ */
+#define IN865_RFU1_SIZE                             1
+
+/*!
+ * Size of RFU 2 field
+ */
+#define IN865_RFU2_SIZE                             3
+
+/*!
+ * Datarate of the beacon channel
+ */
+#define IN865_BEACON_CHANNEL_DR                     DR_4
+
+/*!
+ * Bandwith of the beacon channel
+ */
+#define IN865_BEACON_CHANNEL_BW                     0
 
 /*!
  * Maximum number of bands
@@ -466,6 +501,13 @@ void RegionIN865SetContinuousWave( ContinuousWaveParams_t* continuousWave );
  * \retval newDr Computed datarate.
  */
 uint8_t RegionIN865ApplyDrOffset( uint8_t downlinkDwellTime, int8_t dr, int8_t drOffset );
+
+/*!
+ * \brief Sets the radio into beacon reception mode
+ *
+ * \param [IN] rxBeaconSetup Pointer to the function parameters
+ */
+ void RegionIN865RxBeaconSetup( RxBeaconSetup_t* rxBeaconSetup, uint8_t* outDr );
 
 /*! \} defgroup REGIONIN865 */
 

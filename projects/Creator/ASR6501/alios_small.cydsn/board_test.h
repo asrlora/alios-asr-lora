@@ -20,7 +20,7 @@ bool LoRaTestRx(uint32_t freq, uint8_t dr);
 bool LoRaTestTx(uint32_t freq, uint8_t dr, uint8_t pwr);
 bool LoRaTestTxcw(uint32_t freq, uint8_t pwr, uint8_t opt);
 bool LoRaTestStdby(uint8_t stdby);
-bool process_loratest_at(uint8_t *buf, uint32_t size);
+bool loratest_at_process(uint8_t *buf, uint32_t size);
 
 #endif
 /* [] END OF FILE */

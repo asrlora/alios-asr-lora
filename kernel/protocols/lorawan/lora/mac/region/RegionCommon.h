@@ -62,6 +62,37 @@ typedef struct sLinkAdrParams
      */
     uint16_t ChMask;
 }LinkAdrParams_t;
+typedef struct sRegionCommonRxBeaconSetupParams
+{
+    /*!
+     * A pointer to the available datarates.
+     */
+    const uint8_t* Datarates;
+    /*!
+     * Frequency
+     */
+    uint32_t Frequency;
+    /*!
+     * The size of the beacon frame.
+     */
+    uint8_t BeaconSize;
+    /*!
+     * The datarate of the beacon.
+     */
+    uint8_t BeaconDatarate;
+    /*!
+     * The channel bandwidth of the beacon.
+     */
+    uint8_t BeaconChannelBW;
+    /*!
+     * The RX time.
+     */
+    uint32_t RxTime;
+    /*!
+     * The symbol timeout of the RX procedure.
+     */
+    uint16_t SymbolTimeout;
+}RegionCommonRxBeaconSetupParams_t;
 
 /*!
  * \brief Calculates the join duty cycle.
@@ -242,6 +273,13 @@ void RegionCommonComputeRxWindowParameters( double tSymbol, uint8_t minRxSymbols
  * \retval Returns the physical TX power.
  */
 int8_t RegionCommonComputeTxPower( int8_t txPowerIndex, float maxEirp, float antennaGain );
+
+/*!
+ * \brief Sets up the radio into RX beacon mode.
+ *
+ * \param [IN] rxBeaconSetupParams A pointer to the input parameters.
+ */
+void RegionCommonRxBeaconSetup( RegionCommonRxBeaconSetupParams_t* rxBeaconSetupParams );
 
 /*! \} defgroup REGIONCOMMON */
 

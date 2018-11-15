@@ -1,104 +1,67 @@
 /*
  * Copyright (C) 2015-2017 Alibaba Group Holding Limited
  */
-
-#include "linkwan.h"
 #include "commissioning.h"
 #include "utilities.h"
+#include "LoRaMacCrypto.h"
 #include "LoRaMac.h"
-#include "Region.h"
-#include "RegionCN470A.h"
+#include "LoRaMacClassB.h"
 #include "timeServer.h"
+#include "hw.h"
+#include "low_power.h"
 #include "radio.h"
 #include "linkwan_ica_at.h"
 #include <uart_port.h>
+#include "hal/soc/flash.h"
 #include "hal/soc/uart.h"
+#include <aos/aos.h>
 #ifdef AOS_KV
 #include <assert.h>
 #include "kvmgr.h"
 #endif
+#include "lwan_config.h"  
+#include "linkwan.h"
+
+#define MAX_BEACON_RETRY_TIMES 2
+#define LORA_KEYS_MAGIC_NUM 0xABABBABA 
+
 static uint8_t tx_buf[LORAWAN_APP_DATA_BUFF_SIZE];
 static lora_AppData_t tx_data = {tx_buf, 1, 10};
 static uint8_t rx_buf[LORAWAN_APP_DATA_BUFF_SIZE];
 static lora_AppData_t rx_data = {rx_buf, 0, 0};
-static uint8_t tx_size = 1;
 
 static LoRaMacPrimitives_t LoRaMacPrimitives;
 static LoRaMacCallback_t LoRaMacCallbacks;
 static LoRaMainCallback_t *app_callbacks;
-static MibRequestConfirm_t mibReq;
 
-static int8_t is_tx_confirmed = ENABLE;
-static bool next_tx = true;
-static uint8_t num_trials = 8;
-static bool rejoin_flag = true;
+static volatile bool next_tx = true;
+static volatile bool rejoin_flag = true;
 
-static uint8_t gAutoJoin = 0;
-static uint8_t gJoinInterval =8;
-static uint16_t gJoinTrials = 8;
+static uint8_t gGatewayID[3] ={0};
+static uint8_t g_beacon_retry_times = 0;
 
 static uint32_t g_ack_index = 0;
-static uint32_t g_msg_index = 0;
-
+static uint8_t g_data_send_nbtrials = 0;
+static int8_t g_data_send_msg_type = -1;
+#ifdef CONFIG_LINKWAN
 static uint8_t g_freqband_num = 0;
+#endif    
 
-static LoRaParam_t lora_param = {
-    TX_ON_NONE,
-    0,
-    true,
-    DR_3,
-    LORAWAN_PUBLIC_NETWORK,
-    JOINREQ_NBTRIALS,
-    JOIN_MODE_OTAA,
-};
-
-typedef struct {
-    int8_t   Power;
-    uint32_t Bandwidth;
-    uint32_t Datarate;
-    bool     LowDatarateOptimize;
-    uint8_t  Coderate;
-    uint16_t PreambleLen;
-    bool     FixLen;
-    uint8_t  PayloadLen;
-    bool     CrcOn;
-    bool     FreqHopOn;
-    uint8_t  HopPeriod;
-    bool     IqInverted;
-    bool     RxContinuous;
-    uint32_t TxTimeout;
-    bool     PublicNetwork;
-} __attribute__((packed)) RadioLoRaSettings_t;
-
-typedef struct {
-    bool autoJoin;
-    uint8_t joinInterval;
-    uint8_t joinTrials;
-}JoinSettings_t;
-
-extern LoRaMacParams_t LoRaMacParams;
-extern uint32_t LoRaMacState;
 static TimerEvent_t TxNextPacketTimer;
-volatile static DeviceState_t device_state = DEVICE_STATE_INIT;
-static DeviceStatus_t device_status = DEVICE_STATUS_IDLE;
+volatile DeviceState_t g_lwan_device_state = DEVICE_STATE_INIT;
+static DeviceStatus_t g_lwan_device_status = DEVICE_STATUS_IDLE;
 
-lora_config_t g_lora_config = {1, DR_5, INVALID_LORA_CONFIG};
-lora_dev_t g_lora_dev = {LORAWAN_DEVICE_EUI, LORAWAN_APPLICATION_EUI, LORAWAN_APPLICATION_KEY, 1, DR_5, CLASS_A, NODE_MODE_NORMAL, 0x0001, VALID_LORA_CONFIG};
-lora_abp_id_t g_lora_abp_id = {LORAWAN_DEVICE_ADDRESS, LORAWAN_NWKSKEY, LORAWAN_APPSKEY, INVALID_LORA_CONFIG};
-node_freq_mode_t g_freq_mode = FREQ_MODE_INTRA;
-join_method_t g_join_method;
-bool g_lora_debug;
-
+bool g_lora_debug = false;
+static LWanDevConfig_t *g_lwan_dev_config_p = NULL;
+static LWanMacConfig_t *g_lwan_mac_config_p = NULL;
+static LWanDevKeys_t *g_lwan_dev_keys_p = NULL;
 static void start_dutycycle_timer(void);
-uint32_t DevAddr = LORAWAN_DEVICE_ADDRESS;
-uint8_t NwkSKey[] = LORAWAN_NWKSKEY;
-uint8_t AppSKey[] = LORAWAN_APPSKEY;
-extern int32 DeepSleepInIdle(void);
 
 static bool send_frame(void)
 {
     McpsReq_t mcpsReq;
     LoRaMacTxInfo_t txInfo;
+    uint8_t send_msg_type;
 
     if (tx_data.BuffSize > LINKWAN_APP_DATA_SIZE) {
         tx_data.BuffSize = LINKWAN_APP_DATA_SIZE;
@@ -108,21 +71,38 @@ static bool send_frame(void)
         return true;
     }
 
-    if (is_tx_confirmed == DISABLE) {
+    if(g_lwan_mac_config_p->modes.linkcheck_mode == 2) {
+        MlmeReq_t mlmeReq;
+        mlmeReq.Type = MLME_LINK_CHECK;
+        LoRaMacMlmeRequest(&mlmeReq);
+    }
+    
+    send_msg_type = g_data_send_msg_type>=0?g_data_send_msg_type:g_lwan_mac_config_p->modes.confirmed_msg;
+    if (send_msg_type == LORAWAN_UNCONFIRMED_MSG) {
+        MibRequestConfirm_t mibReq;
+        mibReq.Type = MIB_CHANNELS_NB_REP;
+        mibReq.Param.ChannelNbRep = g_data_send_nbtrials?g_data_send_nbtrials:
+                                                    g_lwan_mac_config_p->nbtrials.unconf + 1;
+        LoRaMacMibSetRequestConfirm(&mibReq);
+    
         mcpsReq.Type = MCPS_UNCONFIRMED;
         mcpsReq.Req.Unconfirmed.fPort = tx_data.Port;
         mcpsReq.Req.Unconfirmed.fBuffer = tx_data.Buff;
         mcpsReq.Req.Unconfirmed.fBufferSize = tx_data.BuffSize;
-        mcpsReq.Req.Unconfirmed.Datarate = lora_param.TxDatarate;
+        mcpsReq.Req.Unconfirmed.Datarate = g_lwan_mac_config_p->datarate;
     } else {
         mcpsReq.Type = MCPS_CONFIRMED;
         mcpsReq.Req.Confirmed.fPort = tx_data.Port;
         mcpsReq.Req.Confirmed.fBuffer = tx_data.Buff;
         mcpsReq.Req.Confirmed.fBufferSize = tx_data.BuffSize;
-        mcpsReq.Req.Confirmed.NbTrials = num_trials;
-        mcpsReq.Req.Confirmed.Datarate = lora_param.TxDatarate;
+        mcpsReq.Req.Confirmed.NbTrials = g_data_send_nbtrials?g_data_send_nbtrials:
+                                                    g_lwan_mac_config_p->nbtrials.conf+1;
+        mcpsReq.Req.Confirmed.Datarate = g_lwan_mac_config_p->datarate; 
     }
 
+    g_data_send_nbtrials = 0;
+    g_data_send_msg_type = -1;
+    
     if (LoRaMacMcpsRequest(&mcpsReq) == LORAMAC_STATUS_OK) {
         return false;
     }
@@ -132,101 +112,44 @@ static bool send_frame(void)
 
 static void prepare_tx_frame(void)
 {
-    if (lora_param.TxEvent == TX_ON_TIMER) {
+    if (g_lwan_mac_config_p->modes.report_mode == TX_ON_TIMER) {
         app_callbacks->LoraTxData(&tx_data);
     }
 }
 
-static uint16_t crc16(uint8_t *buffer, uint8_t length )
-{
-    const uint16_t polynom = 0x1021;
-    uint16_t crc = 0x0000;
-
-    for (uint8_t i = 0; i < length; ++i) {
-        crc ^= ( uint16_t ) buffer[i] << 8;
-        for (uint8_t j = 0; j < 8; ++j) {
-            crc = (crc & 0x8000) ? (crc << 1) ^ polynom : (crc << 1);
-        }
-    }
-
-    return crc;
-}
-
-
-static void read_lora_dev(lora_dev_t *lora_dev)
- {
-    int len;
-    uint16_t crc;
-
-    memset(lora_dev, 0, sizeof(lora_dev_t));
-#ifdef AOS_KV
-        aos_kv_set("lora", &g_lora_config, sizeof(g_lora_config));
-    len = sizeof(lora_dev_t);
-    aos_kv_get("lora", lora_dev, &len);
-#endif
-    crc = crc16((uint8_t *)lora_dev, len - 2);
-    if (crc != lora_dev->crc) {
-        lora_dev->freqband = -1;
-        lora_dev->class = CLASS_A;
-        lora_dev->mode = NODE_MODE_NORMAL;
-        lora_dev->mask = 0xffff;
-    }
-}
-
-static void write_lora_dev(lora_dev_t *lora_dev)
-{
-#ifdef AOS_KV
-    lora_dev->crc = crc16((uint8_t *)lora_dev, sizeof(lora_dev_t) - 2);
-    aos_kv_set("lora", lora_dev, sizeof(lora_dev_t));
-#endif
-}
-
-
+#ifdef CONFIG_LINKWAN
 static uint8_t get_freqband_num(void)
 {
-    uint16_t mask = get_lora_freqband_mask();
+    uint8_t num = 0;
+    uint16_t mask = g_lwan_dev_config_p->freqband_mask;
 
     for (uint8_t i = 0; i < 16; i++) {
         if ((mask & (1 << i)) && i != 1) {
-            g_freqband_num++;
+            num++;
         }
     }
+    return num;
 }
-
-
-static char *get_class_name(int8_t class)
+static uint8_t get_next_freqband(void)
 {
-    if (class == CLASS_B) {
-        return "class_b";
-    } else if (class == CLASS_C) {
-        return "class_c";
-    } else {
-        return "class_a";
-    }
-}
+    uint8_t freqband[16];
+    uint8_t freqnum = 0;
+    uint16_t mask = g_lwan_dev_config_p->freqband_mask;
 
-
-void lora_reboot(int8_t mode)
-{
-    if (mode == 0) {
-	    CySoftwareReset();
-    } else if (mode == 1) {
-        if (next_tx == true) {
-            prepare_tx_frame();
-            next_tx = send_frame();
-            CySoftwareReset();
+    freqband[freqnum++] = 1; //1A2
+    for (uint8_t i = 0; i < 16; i++) {
+        if ((mask & (1 << i)) && i != 1) {
+            freqband[freqnum++] = i;
         }
     }
+    
+    return freqband[randr(0,freqnum-1)];
 }
+#endif
 
 static void reset_join_state(void)
 {
-    lora_dev_t lora_dev;
-
-    read_lora_dev(&lora_dev);
-    lora_dev.freqband = -1;
-    write_lora_dev(&lora_dev);
-    device_state = DEVICE_STATE_JOIN;
+    g_lwan_device_state = DEVICE_STATE_JOIN;
 }
 static void on_tx_next_packet_timer_event(void)
 {
@@ -240,120 +163,49 @@ static void on_tx_next_packet_timer_event(void)
 
     if (status == LORAMAC_STATUS_OK) {
         if (mib_req.Param.IsNetworkJoined == true) {
-            device_state = DEVICE_STATE_SEND;
+            g_lwan_device_state = DEVICE_STATE_SEND;
         } else {
             rejoin_flag = true;
-            device_state = DEVICE_STATE_JOIN;
+            g_lwan_device_state = DEVICE_STATE_JOIN;
         }
     }
-}
-
-
-static void store_lora_config(void)
-{
-    MibRequestConfirm_t mib_req;
-    LoRaMacStatus_t status;
-    uint32_t freqband;
-    int8_t datarate;
-
-    mib_req.Type = MIB_FREQ_BAND;
-    status = LoRaMacMibGetRequestConfirm(&mib_req);
-    if (status == LORAMAC_STATUS_OK) {
-        freqband = mib_req.Param.freqband;
-    } else {
-        return;
-    }
-
-    mib_req.Type = MIB_CHANNELS_DATARATE;
-    status = LoRaMacMibGetRequestConfirm(&mib_req);
-    if (status == LORAMAC_STATUS_OK) {
-        datarate = mib_req.Param.ChannelsDatarate;
-    } else {
-        return;
-    }
-
-    g_lora_config.freqband = freqband;
-    g_lora_config.datarate = datarate;
-    g_lora_config.flag = VALID_LORA_CONFIG;
-#ifdef AOS_KV
-    aos_kv_set("lora", &g_lora_config, sizeof(g_lora_config));
-#endif
 }
 
 static void mcps_confirm(McpsConfirm_t *mcpsConfirm)
 {
     if (mcpsConfirm->Status == LORAMAC_EVENT_INFO_STATUS_OK) {
-        switch (mcpsConfirm->McpsRequest) {
-            case MCPS_UNCONFIRMED: {
-                // Check Datarate
-                // Check TxPower
-                break;
-            }
-            case MCPS_CONFIRMED: {
-                // Check Datarate
-                // Check TxPower
-                // Check AckReceived
-                // Check NbTrials
-                break;
-            }
-            case MCPS_PROPRIETARY: {
-                break;
-            }
-            default:
-                break;
-        }
+#ifdef CONFIG_LINKWAN_AT        
+        PRINTF_AT("\r\nOK+SENT:%02X\r\n", mcpsConfirm->NbRetries);
+#endif        
     } else {
-        switch ( mcpsConfirm->McpsRequest ) {
-            case MCPS_UNCONFIRMED: {
-                // Check Datarate
-                // Check TxPower
-                break;
-            }
-            case MCPS_CONFIRMED: {
-                // Check Datarate
-                // Check TxPower
-                // Check AckReceived
-                // Check NbTrials
-
+#ifdef CONFIG_LINKWAN_AT        
+        PRINTF_AT("\r\nERR+SENT:%02X\r\n", mcpsConfirm->NbRetries);
+#endif  
+        if(mcpsConfirm->McpsRequest ==MCPS_CONFIRMED) {
+            if(g_lwan_dev_config_p->modes.join_mode == JOIN_MODE_OTAA) {
                 reset_join_state();
-                g_join_method = DEF_JOIN_METHOD;
+#ifdef CONFIG_LINKWAN            
+                g_lwan_dev_config_p->join_settings.join_method = JOIN_METHOD_DEF;
+#endif    
                 DBG_LINKWAN("Not receive Ack,Start to Join...\r\n");
-                break;
+            }else{
+#ifdef CONFIG_LINKWAN
+                MibRequestConfirm_t mibReq;
+                mibReq.Type = MIB_FREQ_BAND;
+                mibReq.Param.freqband = get_next_freqband();
+                LoRaMacMibSetRequestConfirm(&mibReq);
+#endif  
             }
-            case MCPS_PROPRIETARY: {
-                break;
-            }
-            default:
-                break;
         }
     }
     next_tx = true;
 }
 
-static void McpsIndication(McpsIndication_t *mcpsIndication)
+static void mcps_indication(McpsIndication_t *mcpsIndication)
 {
     if ( mcpsIndication->Status != LORAMAC_EVENT_INFO_STATUS_OK ) {
         return;
     }
-
-    switch ( mcpsIndication->McpsIndication ) {
-        case MCPS_UNCONFIRMED: {
-            break;
-        }
-        case MCPS_CONFIRMED: {
-            break;
-        }
-        case MCPS_PROPRIETARY: {
-            break;
-        }
-        case MCPS_MULTICAST: {
-            DBG_LINKWAN( "MCPS_MULTICAST\n" );
-            break;
-        }
-        default:
-            break;
-    }
-
     // Check Multicast
     // Check Port
     // Check Datarate
@@ -363,70 +215,110 @@ static void McpsIndication(McpsIndication_t *mcpsIndication)
     // Check Rssi
     // Check Snr
     // Check RxSlot
-    DBG_LINKWAN( "rssi = %d, snr = %d, datarate = %d\r\n", mcpsIndication->Rssi, mcpsIndication->Snr,
+    DBG_PRINTF( "receive data: rssi = %d, snr = %d, datarate = %d\r\n", mcpsIndication->Rssi, mcpsIndication->Snr,
                  mcpsIndication->RxDatarate);
-    set_lora_device_status(DEVICE_STATUS_SEND_PASS_WITH_DL);
+    lwan_dev_status_set(DEVICE_STATUS_SEND_PASS_WITH_DL);
     if (mcpsIndication->RxData == true) {
         switch ( mcpsIndication->Port ) {
             case 224:
                 break;
-            default:
+            default: {            
                 rx_data.Port = mcpsIndication->Port;
                 rx_data.BuffSize = mcpsIndication->BufferSize;
                 memcpy1(rx_data.Buff, mcpsIndication->Buffer, rx_data.BuffSize);
                 app_callbacks->LoraRxData(&rx_data);
                 break;
+            }
         }
 #ifdef CONFIG_DEBUG_LINKWAN
     } else if (mcpsIndication->AckReceived) {
-        DBG_LINKWAN( "rx, ACK, index %d\r\n", g_ack_index++);
+        DBG_LINKWAN( "rx, ACK, index %u\r\n", (unsigned int)g_ack_index++);
 #endif
     }
+#ifdef CONFIG_LINKWAN_AT   
+    uint8_t confirm = 0;
+    if(mcpsIndication->McpsIndication==MCPS_UNCONFIRMED)
+        confirm = 0;
+    else if(mcpsIndication->McpsIndication==MCPS_CONFIRMED)
+        confirm = 1;
+    uint8_t type = confirm | mcpsIndication->AckReceived<<1 | 
+                   mcpsIndication->LinkCheckAnsReceived<<2 | mcpsIndication->DevTimeAnsReceived<<3;
+    PRINTF_AT("\r\nOK+RECV:%02X,%02X,%02X", type, mcpsIndication->Port, mcpsIndication->BufferSize);
+    if(mcpsIndication->BufferSize) {
+        PRINTF_AT(",");
+        for(int i=0; i<mcpsIndication->BufferSize; i++) {
+            PRINTF_AT("%02X", mcpsIndication->Buffer[i]);
+        }
+    }
+    PRINTF_AT("\r\n");
+#endif
+
+#ifdef CONFIG_LWAN    
+    if(mcpsIndication->UplinkNeeded) {
+        g_lwan_device_state = DEVICE_STATE_SEND_MAC;
+    }
+#endif 
 }
 
 static uint32_t generate_rejoin_delay(void)
 {
     uint32_t rejoin_delay = 0;
 
-    while (rejoin_delay < gJoinInterval*1000) {
-        rejoin_delay += (Radio.Random() % 250);
+    while (rejoin_delay < g_lwan_dev_config_p->join_settings.join_interval*1000) {
+        rejoin_delay += (rand1() % 250);
     }
 
     return rejoin_delay;
 }
 
-static void MlmeConfirm( MlmeConfirm_t *mlmeConfirm )
+static void mlme_confirm( MlmeConfirm_t *mlmeConfirm )
 {
-    uint32_t rejoin_delay;
+    uint32_t rejoin_delay = 8*1000;
+    MibRequestConfirm_t mibReq;
 
     switch ( mlmeConfirm->MlmeRequest ) {
         case MLME_JOIN: {
             if (mlmeConfirm->Status == LORAMAC_EVENT_INFO_STATUS_OK) {
                 // Status is OK, node has joined the network
-                device_state = DEVICE_STATE_JOINED;
-                set_lora_device_status(DEVICE_STATUS_JOIN_PASS);
+                g_lwan_device_state = DEVICE_STATE_JOINED;
+                lwan_dev_status_set(DEVICE_STATUS_JOIN_PASS);
+#ifdef CONFIG_LINKWAN_AT                  
+                PRINTF_AT("%s:OK\r\n", LORA_AT_CJOIN);
+#endif                
             } else {
-                set_lora_device_status(DEVICE_STATUS_JOIN_FAIL);
+                lwan_dev_status_set(DEVICE_STATUS_JOIN_FAIL);
+                
+#ifdef CONFIG_LINKWAN                
                 // Join was not successful. Try to join again
                 reset_join_state();
-                if (g_join_method != SCAN_JOIN_METHOD) {
-                    g_join_method = (g_join_method + 1) % JOIN_METHOD_NUM;
+                if (g_lwan_dev_config_p->join_settings.join_method != JOIN_METHOD_SCAN) {
+                    g_lwan_dev_config_p->join_settings.join_method = 
+                        (g_lwan_dev_config_p->join_settings.join_method + 1) % JOIN_METHOD_NUM;
                     rejoin_delay = generate_rejoin_delay();
-                    if (g_join_method == SCAN_JOIN_METHOD) {
-                        get_freqband_num();
+                    if (g_lwan_dev_config_p->join_settings.join_method == JOIN_METHOD_SCAN) {
+                        g_freqband_num = get_freqband_num();
                     }
                 }
 
-                if (g_join_method == SCAN_JOIN_METHOD) {
+                if (g_lwan_dev_config_p->join_settings.join_method == JOIN_METHOD_SCAN) {
                     if (g_freqband_num == 0) {
-                        g_join_method = DEF_JOIN_METHOD;
+                        g_lwan_dev_config_p->join_settings.join_method = JOIN_METHOD_DEF;
                         rejoin_delay = 60 * 60 * 1000;  // 1 hour
+#ifdef CONFIG_LINKWAN_AT                          
+                        PRINTF_AT("%s:FAIL\r\n", LORA_AT_CJOIN);
+#endif                        
                         DBG_LINKWAN("Wait 1 hour for new round of scan\r\n");
                     } else {
                         g_freqband_num--;
                         rejoin_delay = generate_rejoin_delay();
                     }
                 }
+#else
+#ifdef CONFIG_LINKWAN_AT                          
+                PRINTF_AT("%s:FAIL\r\n", LORA_AT_CJOIN);
+#endif          
+                rejoin_delay = generate_rejoin_delay();
+#endif    
                 TimerSetValue(&TxNextPacketTimer, rejoin_delay);
                 TimerStart(&TxNextPacketTimer);
                 rejoin_flag = false;
@@ -434,14 +326,66 @@ static void MlmeConfirm( MlmeConfirm_t *mlmeConfirm )
             break;
         }
         case MLME_LINK_CHECK: {
-#ifdef CONFIG_LINKWAN             
-            PRINTF_RAW("+CLINKCHECK: %d, %d, %d, %d, %d\n", mlmeConfirm->Status, mlmeConfirm->DemodMargin, mlmeConfirm->NbGateways, mlmeConfirm->Rssi, mlmeConfirm->Snr);
+#ifdef CONFIG_LINKWAN_AT             
+            PRINTF_AT("+CLINKCHECK: %d, %d, %d, %d, %d\r\n", mlmeConfirm->Status, mlmeConfirm->DemodMargin, mlmeConfirm->NbGateways, mlmeConfirm->Rssi, mlmeConfirm->Snr);
 #endif            
             if ( mlmeConfirm->Status == LORAMAC_EVENT_INFO_STATUS_OK ) {
                 // Check DemodMargin
                 // Check NbGateways
             } else {
-                set_lora_device_status(DEVICE_STATUS_NETWORK_ABNORMAL);
+                lwan_dev_status_set(DEVICE_STATUS_NETWORK_ABNORMAL);
+            }
+            break;
+        }
+        case MLME_DEVICE_TIME:
+        {
+            if( mlmeConfirm->Status == LORAMAC_EVENT_INFO_STATUS_OK ){
+                // Switch to the next state immediately
+                g_lwan_device_state = DEVICE_STATE_BEACON_ACQUISITION;
+                next_tx = true;
+            } else {
+                //No device time Ans
+                g_lwan_device_state = DEVICE_STATE_SLEEP;
+            }
+            
+            break;
+        }
+        case MLME_BEACON_ACQUISITION:
+        {
+            if( mlmeConfirm->Status == LORAMAC_EVENT_INFO_STATUS_OK ) {
+                //beacon received
+                g_lwan_device_state = DEVICE_STATE_REQ_PINGSLOT_ACK;
+                g_beacon_retry_times = 0;
+            } else {
+                //beacon lost
+                if(g_beacon_retry_times < MAX_BEACON_RETRY_TIMES) {
+                    g_beacon_retry_times ++;
+                    g_lwan_device_state = DEVICE_STATE_REQ_DEVICE_TIME;
+                } else {
+                    g_beacon_retry_times = 0;
+                    g_lwan_device_state = DEVICE_STATE_SLEEP;
+                }
+            }
+            break;
+        }
+        case MLME_PING_SLOT_INFO:
+        {
+            if( mlmeConfirm->Status == LORAMAC_EVENT_INFO_STATUS_OK )
+            {
+                mibReq.Type = MIB_DEVICE_CLASS;
+                mibReq.Param.Class = CLASS_B;
+                LoRaMacMibSetRequestConfirm( &mibReq );
+                
+                mibReq.Type = MIB_PING_SLOT_DATARATE;
+                mibReq.Param.PingSlotDatarate = g_lwan_dev_config_p->classb_param.pslot_dr;
+                LoRaMacMibSetRequestConfirm( &mibReq );
+
+                g_lwan_device_state = DEVICE_STATE_SEND;
+                next_tx = true;
+            }
+            else
+            {
+                g_lwan_device_state = DEVICE_STATE_REQ_PINGSLOT_ACK;
             }
             break;
         }
@@ -451,142 +395,161 @@ static void MlmeConfirm( MlmeConfirm_t *mlmeConfirm )
     next_tx = true;
 }
 
+static void mlme_indication( MlmeIndication_t *mlmeIndication )
+{
+    MibRequestConfirm_t mibReq;
+
+    switch( mlmeIndication->MlmeIndication )
+    {
+        case MLME_SCHEDULE_UPLINK:
+        {// The MAC signals that we shall provide an uplink as soon as possible
+            g_lwan_device_state = DEVICE_STATE_SEND_MAC;
+            break;
+        }
+        case MLME_BEACON_LOST:
+        {
+            mibReq.Type = MIB_DEVICE_CLASS;
+            mibReq.Param.Class = CLASS_A;
+            LoRaMacMibSetRequestConfirm( &mibReq );
+
+            // Switch to class A again
+            g_lwan_device_state = DEVICE_STATE_REQ_DEVICE_TIME;
+            break;
+        }
+        case MLME_BEACON:
+        {
+            if( mlmeIndication->Status == LORAMAC_EVENT_INFO_STATUS_BEACON_LOCKED )
+            {
+                if(mlmeIndication->BeaconInfo.GwSpecific.InfoDesc==3){ //NetID+GatewayID
+                    uint8_t *info = mlmeIndication->BeaconInfo.GwSpecific.Info;
+                    if((gGatewayID[0]|gGatewayID[1]|gGatewayID[2]) 
+                    && (memcmp(&info[3],gGatewayID,3)!=0)){//GatewayID not 0 and changed
+                        //send an uplink in [0:120] seconds
+                        TimerStop(&TxNextPacketTimer);
+                        TimerSetValue(&TxNextPacketTimer,randr(0,120000));
+                        TimerStart(&TxNextPacketTimer);                       
+                    }
+                    memcpy(gGatewayID,&info[3],3);
+                }
+            }
+            break;
+        }
+        default:
+            break;
+    }
+}
+
+
+static void start_dutycycle_timer(void)
+{
+    MibRequestConfirm_t mib_req;
+    LoRaMacStatus_t status;
+
+    TimerStop(&TxNextPacketTimer);
+    mib_req.Type = MIB_NETWORK_JOINED;
+    status = LoRaMacMibGetRequestConfirm(&mib_req);
+    if (status == LORAMAC_STATUS_OK) {
+        if (mib_req.Param.IsNetworkJoined == true &&
+            g_lwan_mac_config_p->modes.report_mode == TX_ON_TIMER && g_lwan_mac_config_p->report_interval != 0) {
+            TimerSetValue(&TxNextPacketTimer, g_lwan_mac_config_p->report_interval*1000);
+            TimerStart(&TxNextPacketTimer);
+            return;
+        }
+    }
+    if (g_lwan_mac_config_p->report_interval == 0 && g_lwan_mac_config_p->modes.report_mode == TX_ON_TIMER) {
+        g_lwan_mac_config_p->modes.report_mode = TX_ON_NONE;
+    }
+}
+
+MulticastParams_t *get_lora_cur_multicast(void)
+{
+    MibRequestConfirm_t mib_req;
+    LoRaMacStatus_t status;
+
+    mib_req.Type = MIB_MULTICAST_CHANNEL;
+    status = LoRaMacMibGetRequestConfirm(&mib_req);
+    if (status == LORAMAC_STATUS_OK) {
+        return mib_req.Param.MulticastList;
+    }
+    return NULL;
+}
+
+static void print_dev_info(void)
+{
+    if(g_lwan_dev_config_p->modes.join_mode == JOIN_MODE_OTAA){
+        DBG_LINKWAN("OTAA\r\n" );
+        DBG_LINKWAN("DevEui= %02X-%02X-%02X-%02X-%02X-%02X-%02X-%02X\r\n",
+                    g_lwan_dev_keys_p->ota.deveui[0], g_lwan_dev_keys_p->ota.deveui[1], g_lwan_dev_keys_p->ota.deveui[2], g_lwan_dev_keys_p->ota.deveui[3], \
+                    g_lwan_dev_keys_p->ota.deveui[4], g_lwan_dev_keys_p->ota.deveui[5], g_lwan_dev_keys_p->ota.deveui[6], g_lwan_dev_keys_p->ota.deveui[7]);
+        DBG_LINKWAN("AppEui= %02X-%02X-%02X-%02X-%02X-%02X-%02X-%02X\r\n",
+                    g_lwan_dev_keys_p->ota.appeui[0], g_lwan_dev_keys_p->ota.appeui[1], g_lwan_dev_keys_p->ota.appeui[2], g_lwan_dev_keys_p->ota.appeui[3], \
+                    g_lwan_dev_keys_p->ota.appeui[4], g_lwan_dev_keys_p->ota.appeui[5], g_lwan_dev_keys_p->ota.appeui[6], g_lwan_dev_keys_p->ota.appeui[7]);
+        DBG_LINKWAN("AppKey= %02X-%02X-%02X-%02X-%02X-%02X-%02X-%02X-%02X-%02X-%02X-%02X-%02X-%02X-%02X-%02X\r\n",
+                    g_lwan_dev_keys_p->ota.appkey[0], g_lwan_dev_keys_p->ota.appkey[1], g_lwan_dev_keys_p->ota.appkey[2], g_lwan_dev_keys_p->ota.appkey[3], \
+                    g_lwan_dev_keys_p->ota.appkey[4], g_lwan_dev_keys_p->ota.appkey[5], g_lwan_dev_keys_p->ota.appkey[6], g_lwan_dev_keys_p->ota.appkey[7], \
+                    g_lwan_dev_keys_p->ota.appkey[8], g_lwan_dev_keys_p->ota.appkey[9], g_lwan_dev_keys_p->ota.appkey[10], g_lwan_dev_keys_p->ota.appkey[11], \
+                    g_lwan_dev_keys_p->ota.appkey[12], g_lwan_dev_keys_p->ota.appkey[13], g_lwan_dev_keys_p->ota.appkey[14], g_lwan_dev_keys_p->ota.appkey[15]);
+    } else if(g_lwan_dev_config_p->modes.join_mode == JOIN_MODE_ABP){
+        DBG_LINKWAN("ABP\r\n");
+        DBG_LINKWAN("DevAddr= %08X\r\n", (unsigned int)g_lwan_dev_keys_p->abp.devaddr);
+        DBG_LINKWAN("NwkSKey= ");
+        for (int i = 0; i < LORA_KEY_LENGTH; i++) {
+            PRINTF_RAW("%02X", g_lwan_dev_keys_p->abp.nwkskey[i]);
+        };
+        PRINTF_RAW("\r\n");
+        DBG_LINKWAN("AppSKey= ");
+        for (int i = 0; i < LORA_KEY_LENGTH; i++) {
+            PRINTF_RAW("%02X", g_lwan_dev_keys_p->abp.appskey[i]);
+        };
+        PRINTF_RAW("\r\n");
+    }
+    DBG_LINKWAN("class type %c\r\n", 'A' + g_lwan_dev_config_p->modes.class_mode);
+    DBG_LINKWAN("freq mode %s\r\n", g_lwan_dev_config_p->modes.uldl_mode == ULDL_MODE_INTER ? "inter" : "intra");
+    DBG_LINKWAN("scan chn mask 0x%04x\r\n", g_lwan_dev_config_p->freqband_mask);
+}
+
+void init_lwan_configs() 
+{
+    LWanDevKeys_t default_keys = LWAN_DEV_KEYS_DEFAULT;
+    LWanDevConfig_t default_dev_config = LWAN_DEV_CONFIG_DEFAULT;
+    LWanMacConfig_t default_mac_config = LWAN_MAC_CONFIG_DEFAULT;
+    g_lwan_dev_keys_p = lwan_dev_keys_init(&default_keys);
+    g_lwan_dev_config_p = lwan_dev_config_init(&default_dev_config);
+    g_lwan_mac_config_p = lwan_mac_config_init(&default_mac_config);
+}
+
 
 void lora_init(LoRaMainCallback_t *callbacks)
 {
-    device_state = DEVICE_STATE_INIT;
+    g_lwan_device_state = DEVICE_STATE_INIT;
     app_callbacks = callbacks;
 
 #ifdef AOS_KV
     assert(aos_kv_init() == 0);
 #endif
+
 #ifdef CONFIG_LINKWAN_AT
-    extern void linkwan_at_init(void);
     linkwan_at_init();
 #endif
 }
 
-static void print_dev_addr(void)
-{
-if(lora_param.JoinMode == JOIN_MODE_OTAA){
-    DBG_LINKWAN("OTAA\r\n" );
-    DBG_LINKWAN("DevEui= %02X-%02X-%02X-%02X-%02X-%02X-%02X-%02X\r\n",
-                g_lora_dev.dev_eui[0], g_lora_dev.dev_eui[1], g_lora_dev.dev_eui[2], g_lora_dev.dev_eui[3], \
-                g_lora_dev.dev_eui[4], g_lora_dev.dev_eui[5], g_lora_dev.dev_eui[6], g_lora_dev.dev_eui[7]);
-    DBG_LINKWAN("AppEui= %02X-%02X-%02X-%02X-%02X-%02X-%02X-%02X\r\n",
-                g_lora_dev.app_eui[0], g_lora_dev.app_eui[1], g_lora_dev.app_eui[2], g_lora_dev.app_eui[3], \
-                g_lora_dev.app_eui[4], g_lora_dev.app_eui[5], g_lora_dev.app_eui[6], g_lora_dev.app_eui[7]);
-    DBG_LINKWAN("AppKey= %02X-%02X-%02X-%02X-%02X-%02X-%02X-%02X-%02X-%02X-%02X-%02X-%02X-%02X-%02X-%02X\r\n",
-                g_lora_dev.app_key[0], g_lora_dev.app_key[1], g_lora_dev.app_key[2], g_lora_dev.app_key[3], \
-                g_lora_dev.app_key[4], g_lora_dev.app_key[5], g_lora_dev.app_key[6], g_lora_dev.app_key[7], \
-                g_lora_dev.app_key[8], g_lora_dev.app_key[9], g_lora_dev.app_key[10], g_lora_dev.app_key[11], \
-                g_lora_dev.app_key[12], g_lora_dev.app_key[13], g_lora_dev.app_key[14], g_lora_dev.app_key[15]);
-} else if(lora_param.JoinMode == JOIN_MODE_ABP){
-    DBG_LINKWAN("ABP\r\n");
-    DBG_LINKWAN("DevAddr= %02X-%02X-%02X-%02X\r\n",
-                g_lora_abp_id.devaddr[0], g_lora_abp_id.devaddr[1], g_lora_abp_id.devaddr[2],
-                g_lora_abp_id.devaddr[3]);
-    DBG_LINKWAN("NwkSKey= %02X", g_lora_abp_id.nwkskey[0]);
-    for (int i = 1; i < 16; i++) {
-        PRINTF_RAW(" %02X", g_lora_abp_id.nwkskey[i]);
-    };
-    DBG_LINKWAN("\r\n");
-    DBG_LINKWAN("AppSKey= %02X", g_lora_abp_id.appskey[0]);
-    for (int i = 1; i < 16; i++) {
-        PRINTF_RAW(" %02X", g_lora_abp_id.appskey[i]);
-    };
-    DBG_LINKWAN("\r\n");
-
-}
-    DBG_LINKWAN("class type %s\r\n", get_class_name(g_lora_dev.class));
-    DBG_LINKWAN("freq mode %s\r\n", g_freq_mode == FREQ_MODE_INTER ? "inter" : "intra");
-    DBG_LINKWAN("scan chn mask 0x%04x\r\n", g_lora_dev.mask);
-}
-#ifdef CONSOLE_LOG_BUFFER
-void log_printf(void)
-{
-    extern struct circ_buf log_cb;
-    int count;
-    if (CIRC_CNT(log_cb.head, log_cb.tail, UART_CONSOLE_SIZE) > 0) {
-        count = MIN(CIRC_CNT(log_cb.head, log_cb.tail, UART_CONSOLE_SIZE), UART_CONSOLE_SIZE - log_cb.tail);
-        extern uart_dev_t uart_0;;
-        hal_uart_send(&uart_0, log_cb.buf + log_cb.tail, count, count * 300);
-        log_cb.tail = (log_cb.tail + count) & (UART_CONSOLE_SIZE - 1);
-        count = CIRC_CNT(log_cb.head, log_cb.tail, UART_CONSOLE_SIZE);
-        if (count > 0) {
-            hal_uart_send(&uart_0, log_cb.buf+ log_cb.tail, count, count * 300);
-            log_cb.tail = (log_cb.tail + count) & (UART_CONSOLE_SIZE - 1);
-        }
-    }
-}
-#endif
 void lora_fsm( void )
 {
-#ifdef CONFIG_LINKWAN
-    int len = sizeof(g_lora_config);
-    int ret;
-    lora_config_t lora_config;
-    lora_dev_t lora_dev;
-    lora_abp_id_t lora_abp_id;
-#endif
-
     while (1) {
 #ifdef CONFIG_LINKWAN_AT
-        extern void process_linkwan_at(void);
-        process_linkwan_at();
+        linkwan_at_process();
 #endif
-#ifdef CONSOLE_LOG_BUFFER
-        log_printf();
-#endif
-        switch (device_state) {
-            case DEVICE_STATE_INIT: {
-#ifdef AOS_KV
-                memset(&lora_config, 0, sizeof(lora_config));
-                len = sizeof(g_lora_config);
-                aos_kv_get("lora", &lora_config, &len);
-                if (lora_config.flag == VALID_LORA_CONFIG) {
-                    memcpy(&g_lora_config, &lora_config, sizeof(g_lora_config));
-                }
-                memset(&lora_dev, 0, sizeof(lora_dev));
-                len = sizeof(g_lora_dev);
-                aos_kv_get("lora_dev", &lora_dev, &len);
-                if (lora_dev.flag == VALID_LORA_CONFIG) {
-                    memcpy(&g_lora_dev, &lora_dev, sizeof(g_lora_dev));
-                }
-                memset(&lora_abp_id, 0, sizeof(lora_abp_id));
-                len = sizeof(g_lora_abp_id);
-                aos_kv_get("lora_abp", &lora_abp_id, &len);
-                if (lora_abp_id.flag == VALID_LORA_CONFIG) {
-                    memcpy(&g_lora_abp_id, &lora_abp_id, sizeof(g_lora_abp_id));
-                }
-                
-                JoinSettings_t join_settings;
-                len = sizeof(join_settings);
-                memset(&join_settings, 0, len);
-                if(aos_kv_get("join", &join_settings, &len) == 0) {
-                    gAutoJoin = join_settings.autoJoin;
-                    gJoinInterval = join_settings.joinInterval;
-                    gJoinTrials = join_settings.joinTrials+1;
-                }
-#endif
-                if (g_lora_dev.dev_eui[5] & 0x1) {
-                    g_freq_mode = FREQ_MODE_INTER;
-                }
-                print_dev_addr();
-
-                if (g_lora_config.flag == VALID_LORA_CONFIG) {
-                    g_join_method = STORED_JOIN_METHOD;
-                } else {
-                    g_join_method = DEF_JOIN_METHOD;
-                }
-
+        switch (g_lwan_device_state) {
+            case DEVICE_STATE_INIT: { 
                 LoRaMacPrimitives.MacMcpsConfirm = mcps_confirm;
-                LoRaMacPrimitives.MacMcpsIndication = McpsIndication;
-                LoRaMacPrimitives.MacMlmeConfirm = MlmeConfirm;
+                LoRaMacPrimitives.MacMcpsIndication = mcps_indication;
+                LoRaMacPrimitives.MacMlmeConfirm = mlme_confirm;
+                LoRaMacPrimitives.MacMlmeIndication = mlme_indication;
                 LoRaMacCallbacks.GetBatteryLevel = app_callbacks->BoardGetBatteryLevel;
+                LoRaMacCallbacks.GetTemperatureLevel = NULL;
 #if defined(REGION_AS923)
                 LoRaMacInitialization(&LoRaMacPrimitives, &LoRaMacCallbacks, LORAMAC_REGION_AS923);
-#elif defined(REGION_AS923)
+#elif defined(REGION_AU915)
                 LoRaMacInitialization(&LoRaMacPrimitives, &LoRaMacCallbacks, LORAMAC_REGION_AU915);
 #elif defined(REGION_CN470)
                 LoRaMacInitialization(&LoRaMacPrimitives, &LoRaMacCallbacks, LORAMAC_REGION_CN470);
@@ -609,113 +572,165 @@ void lora_fsm( void )
 #else
 #error "Please define a region in the compiler options."
 #endif
+                init_lwan_configs();
+                if(!lwan_is_key_valid(g_lwan_dev_keys_p->pkey, LORA_KEY_LENGTH))
+                    print_dev_info();
+                
                 TimerInit( &TxNextPacketTimer, on_tx_next_packet_timer_event );
 
-                mibReq.Type = MIB_ADR;
-                mibReq.Param.AdrEnable = lora_param.AdrEnable;
-                LoRaMacMibSetRequestConfirm(&mibReq);
-
-                mibReq.Type = MIB_PUBLIC_NETWORK;
-                mibReq.Param.EnablePublicNetwork = lora_param.EnablePublicNetwork;
-                LoRaMacMibSetRequestConfirm(&mibReq);
-
-                mibReq.Type = MIB_DEVICE_CLASS;
-                mibReq.Param.Class = g_lora_dev.class;
-                LoRaMacMibSetRequestConfirm(&mibReq);
-
-#if defined(REGION_EU868)
-                lora_config_duty_cycle_set(LORAWAN_DUTYCYCLE_ON ? ENABLE : DISABLE);
-
-#if (USE_SEMTECH_DEFAULT_CHANNEL_LINEUP == 1)
-                LoRaMacChannelAdd(3, (ChannelParams_t)LC4);
-                LoRaMacChannelAdd(4, (ChannelParams_t)LC5);
-                LoRaMacChannelAdd(5, (ChannelParams_t)LC6);
-                LoRaMacChannelAdd(6, (ChannelParams_t)LC7);
-                LoRaMacChannelAdd(7, (ChannelParams_t)LC8);
-                LoRaMacChannelAdd(8, (ChannelParams_t)LC9);
-                LoRaMacChannelAdd(9, (ChannelParams_t)LC10);
-
-                mibReq.Type = MIB_RX2_DEFAULT_CHANNEL;
-                mibReq.Param.Rx2DefaultChannel = (Rx2ChannelParams_t) {
-                    869525000, DR_3
-                };
-                LoRaMacMibSetRequestConfirm(&mibReq);
-
-                mibReq.Type = MIB_RX2_CHANNEL;
-                mibReq.Param.Rx2Channel = (Rx2ChannelParams_t) {
-                    869525000, DR_3
-                };
-                LoRaMacMibSetRequestConfirm(&mibReq);
-#endif
-
-#endif           
-                if(gAutoJoin){
-                    device_state = DEVICE_STATE_JOIN;
-                } else {
-                    device_state = DEVICE_STATE_SLEEP;
-                    PRINTF_RAW("\r\n%s", LORA_AT_PROMPT);
-                }
+                lwan_dev_params_update();
                 
-                set_lora_device_status(DEVICE_STATUS_IDLE);
+                if(g_lwan_dev_config_p->modes.join_mode == JOIN_MODE_ABP){
+                    MibRequestConfirm_t mibReq;
+                    mibReq.Type = MIB_NET_ID;
+                    mibReq.Param.NetID = LORAWAN_NETWORK_ID;
+                    LoRaMacMibSetRequestConfirm(&mibReq);
+                    mibReq.Type = MIB_DEV_ADDR;
+                    mibReq.Param.DevAddr = g_lwan_dev_keys_p->abp.devaddr;
+                    LoRaMacMibSetRequestConfirm(&mibReq);    
+                    mibReq.Type = MIB_NWK_SKEY;
+                    mibReq.Param.NwkSKey = g_lwan_dev_keys_p->abp.nwkskey;
+                    LoRaMacMibSetRequestConfirm(&mibReq);
+                    mibReq.Type = MIB_APP_SKEY;
+                    mibReq.Param.AppSKey = g_lwan_dev_keys_p->abp.appskey;
+                    LoRaMacMibSetRequestConfirm(&mibReq);
+#ifdef CONFIG_LINKWAN                    
+                    mibReq.Type = MIB_FREQ_BAND;
+                    mibReq.Param.freqband = get_next_freqband();
+                    LoRaMacMibSetRequestConfirm(&mibReq);
+#endif                    
+                    mibReq.Type = MIB_NETWORK_JOINED;
+                    mibReq.Param.IsNetworkJoined = true;
+                    LoRaMacMibSetRequestConfirm(&mibReq);
+                    
+                    lwan_mac_params_update();
+#ifdef CONFIG_LORA_VERIFY 
+                    g_lwan_device_state = DEVICE_STATE_SEND;
+#else
+                    g_lwan_device_state = DEVICE_STATE_SLEEP;
+#endif    
+		        }else if(g_lwan_dev_config_p->modes.join_mode == JOIN_MODE_OTAA) {
+                    if(g_lwan_dev_config_p->join_settings.auto_join){
+                        g_lwan_device_state = DEVICE_STATE_JOIN;
+                    } else {
+                        g_lwan_device_state = DEVICE_STATE_SLEEP;
+                        linkwan_at_prompt_print();
+                    }
+                }
+                lwan_dev_status_set(DEVICE_STATUS_IDLE);
                 break;
             }
 
             case DEVICE_STATE_JOIN: {
-                if(lora_param.JoinMode == JOIN_MODE_OTAA){
+                if(g_lwan_dev_config_p->modes.join_mode == JOIN_MODE_OTAA){
                     MlmeReq_t mlmeReq;
 
                     mlmeReq.Type = MLME_JOIN;
-                    mlmeReq.Req.Join.DevEui = g_lora_dev.dev_eui;
-                    mlmeReq.Req.Join.AppEui = g_lora_dev.app_eui;
-                    mlmeReq.Req.Join.AppKey = g_lora_dev.app_key;
-    
-                    mlmeReq.Req.Join.method = g_join_method;
-                    if (g_join_method == STORED_JOIN_METHOD) {
-                        mlmeReq.Req.Join.freqband = g_lora_config.freqband;
-                        mlmeReq.Req.Join.datarate = g_lora_config.datarate;
+                    mlmeReq.Req.Join.DevEui = g_lwan_dev_keys_p->ota.deveui;
+                    mlmeReq.Req.Join.AppEui = g_lwan_dev_keys_p->ota.appeui;
+                    mlmeReq.Req.Join.AppKey = g_lwan_dev_keys_p->ota.appkey;
+#ifdef CONFIG_LINKWAN    
+                    mlmeReq.Req.Join.method = g_lwan_dev_config_p->join_settings.join_method;
+                    if (g_lwan_dev_config_p->join_settings.join_method == JOIN_METHOD_STORED) {
+                        mlmeReq.Req.Join.freqband = g_lwan_dev_config_p->join_settings.stored_freqband;
+                        mlmeReq.Req.Join.datarate = g_lwan_dev_config_p->join_settings.stored_datarate;
                         mlmeReq.Req.Join.NbTrials = 3;
                     } else {
-                        mlmeReq.Req.Join.NbTrials = gJoinTrials;
+                        mlmeReq.Req.Join.NbTrials = g_lwan_dev_config_p->join_settings.join_trials;
                     }
+#else
+                    mlmeReq.Req.Join.NbTrials = g_lwan_dev_config_p->join_settings.join_trials;
+#endif
 
                     if (next_tx == true && rejoin_flag == true) {
                         if (LoRaMacMlmeRequest(&mlmeReq) == LORAMAC_STATUS_OK) {
                             next_tx = false;
                         }
+#ifdef CONFIG_LINKWAN                        
                         DBG_LINKWAN("Start to Join, method %d, nb_trials:%d\r\n",
-                                    g_join_method, mlmeReq.Req.Join.NbTrials);
+                                    g_lwan_dev_config_p->join_settings.join_method, mlmeReq.Req.Join.NbTrials);
+#else
+                        DBG_LINKWAN("Start to Join, nb_trials:%d\r\n", mlmeReq.Req.Join.NbTrials);
+#endif                        
+    
                     }
-                    device_state = DEVICE_STATE_SLEEP;
-		} else if(lora_param.JoinMode == JOIN_MODE_ABP){
-                    mibReq.Type = MIB_NET_ID;
-                    mibReq.Param.NetID = LORAWAN_NETWORK_ID;
-                    LoRaMacMibSetRequestConfirm(&mibReq);
-
-                    mibReq.Type = MIB_DEV_ADDR;
-                    mibReq.Param.DevAddr = g_lora_abp_id.devaddr;
-                    LoRaMacMibSetRequestConfirm(&mibReq);
-    
-                    mibReq.Type = MIB_NWK_SKEY;
-                    mibReq.Param.NwkSKey = g_lora_abp_id.nwkskey;
-                    LoRaMacMibSetRequestConfirm(&mibReq);
-
-                    mibReq.Type = MIB_APP_SKEY;
-                    mibReq.Param.AppSKey = g_lora_abp_id.appskey;
-                    LoRaMacMibSetRequestConfirm(&mibReq);
-    
-                    mibReq.Type = MIB_NETWORK_JOINED;
-                    mibReq.Param.IsNetworkJoined = true;
-                    LoRaMacMibSetRequestConfirm(&mibReq);
-
-                    device_state = DEVICE_STATE_SEND;
-		}
+		        }
+                g_lwan_device_state = DEVICE_STATE_SLEEP;
                 break;
             }
             case DEVICE_STATE_JOINED: {
                 DBG_LINKWAN("Joined\n\r");
-                store_lora_config();
-                device_state = DEVICE_STATE_SEND;
-                g_join_method = STORED_JOIN_METHOD;
+#ifdef CONFIG_LINKWAN                
+                JoinSettings_t join_settings;
+                lwan_dev_config_get(DEV_CONFIG_JOIN_SETTINGS, &join_settings);
+                    
+                MibRequestConfirm_t mib_req;
+                mib_req.Type = MIB_FREQ_BAND;
+                LoRaMacMibGetRequestConfirm(&mib_req);
+                join_settings.stored_freqband = mib_req.Param.freqband;
+                mib_req.Type = MIB_CHANNELS_DATARATE;
+                LoRaMacMibGetRequestConfirm(&mib_req);
+                join_settings.stored_datarate = mib_req.Param.ChannelsDatarate;
+                join_settings.join_method = JOIN_METHOD_STORED;
+                
+                lwan_dev_config_set(DEV_CONFIG_JOIN_SETTINGS, &join_settings);
+#endif                
+                
+                lwan_mac_params_update();
+                
+                if(g_lwan_dev_config_p->modes.class_mode == CLASS_B) {
+                    g_lwan_device_state = DEVICE_STATE_REQ_DEVICE_TIME;
+                }else{
+#ifdef CONFIG_LORA_VERIFY                    
+                    g_lwan_device_state = DEVICE_STATE_SEND;
+#else
+                    g_lwan_device_state = DEVICE_STATE_SLEEP;
+#endif    
+                }
+                break;
+            }
+            case DEVICE_STATE_REQ_DEVICE_TIME: {
+                MlmeReq_t mlmeReq;
+                MibRequestConfirm_t mib_req;
+
+                mib_req.Type = MIB_NETWORK_JOINED;
+                LoRaMacMibGetRequestConfirm(&mib_req);
+                if (mib_req.Param.IsNetworkJoined == true) {
+                    if( next_tx == true ) {
+                        mlmeReq.Type = MLME_DEVICE_TIME;
+                        LoRaMacMlmeRequest( &mlmeReq );
+                    }
+                    g_lwan_device_state = DEVICE_STATE_SEND_MAC;
+                } else {
+                    g_lwan_device_state = DEVICE_STATE_SLEEP;
+                }
+                
+                break;
+            }
+            case DEVICE_STATE_BEACON_ACQUISITION: {
+                MlmeReq_t mlmeReq;
+
+                if( next_tx == true ) {
+                    if(g_lwan_dev_config_p->classb_param.beacon_freq)
+                        LoRaMacClassBBeaconFreqReq(g_lwan_dev_config_p->classb_param.beacon_freq);
+                    if(g_lwan_dev_config_p->classb_param.pslot_freq)
+                        LoRaMacClassBPingSlotChannelReq(g_lwan_dev_config_p->classb_param.pslot_dr, g_lwan_dev_config_p->classb_param.pslot_freq);
+                    mlmeReq.Type = MLME_BEACON_ACQUISITION;
+                    LoRaMacMlmeRequest( &mlmeReq );
+                }
+                g_lwan_device_state = DEVICE_STATE_SLEEP;
+                break;
+            }
+            case DEVICE_STATE_REQ_PINGSLOT_ACK: {
+                MlmeReq_t mlmeReq;
+
+                if( next_tx == true ) {
+                    mlmeReq.Type = MLME_PING_SLOT_INFO;
+                    mlmeReq.Req.PingSlotInfo.PingSlot.Fields.Periodicity = g_lwan_dev_config_p->classb_param.periodicity;
+                    mlmeReq.Req.PingSlotInfo.PingSlot.Fields.RFU = 0;
+                    LoRaMacMlmeRequest( &mlmeReq );
+                }
+                g_lwan_device_state = DEVICE_STATE_SEND_MAC;
                 break;
             }
             case DEVICE_STATE_SEND: {
@@ -723,12 +738,11 @@ void lora_fsm( void )
                     prepare_tx_frame();
                     next_tx = send_frame();
                 }
-                if (lora_param.TxEvent == TX_ON_TIMER) {
+                if (g_lwan_mac_config_p->modes.report_mode == TX_ON_TIMER) {
                     start_dutycycle_timer();
-                } else if (lora_param.TxEvent == TX_ON_EVENT) {
-                    lora_param.TxEvent = TX_ON_NONE;
                 }
-                device_state = DEVICE_STATE_SLEEP;
+                
+                g_lwan_device_state = DEVICE_STATE_SLEEP;
                 break;
             }
             case DEVICE_STATE_SEND_MAC: {
@@ -736,450 +750,197 @@ void lora_fsm( void )
                     tx_data.BuffSize = 0;
                     next_tx = send_frame();
                 }
-                device_state = DEVICE_STATE_SLEEP;
+                g_lwan_device_state = DEVICE_STATE_SLEEP;
                 break;
             }
             case DEVICE_STATE_SLEEP: {       
 #ifndef LOW_POWER_DISABLE
-                // Wake up through events
-                DeepSleepInIdle();
                 LowPower_Handler( );
 #endif
                 break;
             }
             default: {
-                device_state = DEVICE_STATE_INIT;
+                g_lwan_device_state = DEVICE_STATE_INIT;
                 break;
             }
         }
     }
 }
 
-DeviceState_t lora_getDeviceState( void )
+DeviceState_t lwan_dev_state_get( void )
 {
-    return device_state;
+    return g_lwan_device_state;
 }
 
-node_freq_mode_t get_lora_freq_mode(void)
+void lwan_dev_state_set(DeviceState_t state)
 {
-    return g_freq_mode;
-}
-
-bool set_lora_freq_mode(node_freq_mode_t mode)
-{
-    if ((mode != FREQ_MODE_INTRA && mode != FREQ_MODE_INTER) ||
-        ((g_lora_dev.dev_eui[5] & 0x1 ) && mode == FREQ_MODE_INTRA) ||
-        ((g_lora_dev.dev_eui[5] & 0x1) == 0 && mode == FREQ_MODE_INTER)) {
-        return false;
+    if (g_lwan_device_state == DEVICE_STATE_SLEEP) {
+        TimerStop(&TxNextPacketTimer);
     }
-    g_freq_mode = mode;
+    g_lwan_device_state = state;
+}
+
+bool lwan_dev_status_set(DeviceStatus_t ds)
+{
+    g_lwan_device_status = ds;
+    return true;
+}
+DeviceStatus_t lwan_dev_status_get(void)
+{
+    return g_lwan_device_status;
+}
+
+bool lwan_is_dev_busy()
+{
+    MibRequestConfirm_t mibReq;
+    mibReq.Type = MIB_MAC_STATE;
+    LoRaMacMibGetRequestConfirm(&mibReq);
+    
+    if(g_lwan_device_state == DEVICE_STATE_SLEEP 
+        && mibReq.Param.LoRaMacState == 0)
+        return false;
+    
     return true;
 }
 
-bool set_lora_tx_datarate(int8_t datarate)
+int lwan_mac_req_send(int type, void *param)
 {
-    if (datarate >= CN470A_TX_MIN_DATARATE && datarate <= CN470A_TX_MAX_DATARATE &&
-        get_lora_adr() == 0) {
-        lora_param.TxDatarate = datarate;
-        return true;
-    } else {
-        return false;
+    MlmeReq_t mlmeReq;
+    int ret = LWAN_SUCCESS;
+    
+    switch(type) {
+        case MAC_REQ_LINKCHECK: {
+            mlmeReq.Type = MLME_LINK_CHECK;
+            break;
+        }
+        case MAC_REQ_DEVICE_TIME: {
+            break;
+        }
+        case MAC_REQ_PSLOT_INFO: {
+            uint8_t periodicity = *(uint8_t *)param;
+            if(periodicity>7) 
+                return LWAN_ERROR;
+            
+            mlmeReq.Type = MLME_PING_SLOT_INFO;
+            mlmeReq.Req.PingSlotInfo.PingSlot.Fields.Periodicity = periodicity;
+            mlmeReq.Req.PingSlotInfo.PingSlot.Fields.RFU = 0;
+            
+            ClassBParam_t classb_param;
+            lwan_dev_config_get(DEV_CONFIG_CLASSB_PARAM, &classb_param);
+            classb_param.periodicity = periodicity;
+            lwan_dev_config_set(DEV_CONFIG_CLASSB_PARAM, &classb_param);
+            break;
+        }
+        default: {
+            ret = LWAN_ERROR;
+            break;
+        }
     }
-}
-
-int8_t get_lora_tx_datarate(void)
-{
-    return lora_param.TxDatarate;
-}
-
-bool set_lora_adr(int state)
-{
-    LoRaMacStatus_t status;
-    MibRequestConfirm_t mib_req;
-    bool ret = false;
-
-    if (state == 0) {
-        mib_req.Param.AdrEnable = false;
-    } else {
-        mib_req.Param.AdrEnable = true;
+    
+    if (LoRaMacMlmeRequest(&mlmeReq) == LORAMAC_STATUS_OK) {
+        g_lwan_device_state = DEVICE_STATE_SEND_MAC;
     }
-    mib_req.Type = MIB_ADR;
-    status = LoRaMacMibSetRequestConfirm(&mib_req);
-    if (status == LORAMAC_STATUS_OK) {
-        ret = true;
-    }
+    
+
     return ret;
 }
 
-int get_lora_adr(void)
+int lwan_join(uint8_t bJoin, uint8_t bAutoJoin, uint16_t joinInterval, uint16_t joinRetryCnt)
 {
-    MibRequestConfirm_t mib_req;
-
-    mib_req.Type = MIB_ADR;
-    LoRaMacMibGetRequestConfirm(&mib_req);
-    if (mib_req.Param.AdrEnable == true) {
-        return 1;
-    }
-    return 0;
-}
-
-static void start_dutycycle_timer(void)
-{
-    MibRequestConfirm_t mib_req;
-    LoRaMacStatus_t status;
-
-    TimerStop(&TxNextPacketTimer);
-    mib_req.Type = MIB_NETWORK_JOINED;
-    status = LoRaMacMibGetRequestConfirm(&mib_req);
-    if (status == LORAMAC_STATUS_OK) {
-        if (mib_req.Param.IsNetworkJoined == true &&
-            lora_param.TxEvent == TX_ON_TIMER && lora_param.TxDutyCycleTime != 0) {
-            TimerSetValue(&TxNextPacketTimer, lora_param.TxDutyCycleTime);
-            TimerStart(&TxNextPacketTimer);
-            return;
-        }
-    }
-    if (lora_param.TxDutyCycleTime == 0 && lora_param.TxEvent == TX_ON_TIMER) {
-        lora_param.TxEvent = TX_ON_NONE;
-    }
-}
-
-bool set_lora_tx_dutycycle(uint32_t dutycycle)
-{
-    if (dutycycle != 0 && dutycycle < 1000) {
-        dutycycle = 1000;
-    }
-
-    lora_param.TxDutyCycleTime = dutycycle;
-    TimerStop(&TxNextPacketTimer);
-    if (dutycycle == 0) {
-        lora_param.TxEvent = TX_ON_NONE;
-    } else {
-        lora_param.TxEvent = TX_ON_TIMER;
-        start_dutycycle_timer();
-    }
-    return true;
-}
-
-uint32_t get_lora_tx_dutycycle(void)
-{
-    return lora_param.TxDutyCycleTime;
-}
-
-lora_AppData_t *get_lora_rx_data(void)
-{
-    return &rx_data;
-}
-
-lora_AppData_t *get_lora_tx_data(void)
-{
-    MibRequestConfirm_t mib_req;
-    LoRaMacStatus_t status;
-
-    if (next_tx == false) {
-        return NULL;
-    }
-
-    mib_req.Type = MIB_NETWORK_JOINED;
-    status = LoRaMacMibGetRequestConfirm(&mib_req);
-    if (status == LORAMAC_STATUS_OK) {
-        if (mib_req.Param.IsNetworkJoined == true) {
-            return &tx_data;
-        }
-    }
-
-    return NULL;
-}
-
-bool tx_lora_data(void)
-{
-    MibRequestConfirm_t mib_req;
-    LoRaMacStatus_t status;
-
-    if (next_tx == false) {
-        return false;
-    }
-
-    mib_req.Type = MIB_NETWORK_JOINED;
-    status = LoRaMacMibGetRequestConfirm(&mib_req);
-    if (status == LORAMAC_STATUS_OK) {
-        if (mib_req.Param.IsNetworkJoined == true) {
-            TimerStop(&TxNextPacketTimer);
-            lora_param.TxEvent = TX_ON_EVENT;
-            device_state = DEVICE_STATE_SEND;
-            return true;
-        }
-    }
-
-    return false;
-}
-
-bool set_lora_tx_cfm_flag(int confirmed)
-{
-    is_tx_confirmed = confirmed;
-    return true;
-}
-
-int get_lora_tx_cfm_flag(void)
-{
-    return is_tx_confirmed;
-}
-
-bool set_lora_tx_cfm_trials(uint8_t trials)
-{
-    num_trials = trials;
-    return true;
-}
-
-uint8_t get_lora_tx_cfm_trials(void)
-{
-    return num_trials;
-}
-
-bool set_lora_state(DeviceState_t state)
-{
-    if (device_state == DEVICE_STATE_SLEEP) {
+    int ret = LWAN_SUCCESS;
+    if(bJoin == 0){//stop join
         TimerStop(&TxNextPacketTimer);
+        MibRequestConfirm_t mib_req;
+        LoRaMacStatus_t status;
+        mib_req.Type = MIB_NETWORK_JOINED;
+        mib_req.Param.IsNetworkJoined = false;
+        status = LoRaMacMibSetRequestConfirm(&mib_req);
+
+        if (status != LORAMAC_STATUS_OK)
+            return LWAN_ERROR;
+        g_lwan_device_state = DEVICE_STATE_SLEEP;
+        rejoin_flag = bAutoJoin;
+    } else if(bJoin == 1){
+        JoinSettings_t join_settings;
+        lwan_dev_config_get(DEV_CONFIG_JOIN_SETTINGS, &join_settings);
+        join_settings.auto_join = bAutoJoin;
+        if(joinInterval>=7 && joinInterval<=255)
+            join_settings.join_interval = joinInterval;
+        if(joinRetryCnt>=1 && joinRetryCnt<=255)
+            join_settings.join_trials = joinRetryCnt;
+        lwan_dev_config_set(DEV_CONFIG_JOIN_SETTINGS, &join_settings);
+        
+        MibRequestConfirm_t mib_req;
+        mib_req.Type = MIB_NETWORK_JOINED;
+        LoRaMacStatus_t status = LoRaMacMibGetRequestConfirm(&mib_req);
+        if (status != LORAMAC_STATUS_OK) 
+            return LWAN_ERROR;
+        
+        if (mib_req.Param.IsNetworkJoined == true) {
+            mib_req.Type = MIB_NETWORK_JOINED;
+            mib_req.Param.IsNetworkJoined = false;
+            status = LoRaMacMibSetRequestConfirm(&mib_req);
+            if(status  != LORAMAC_STATUS_OK) {
+                return LWAN_ERROR;
+            }
+            DBG_LINKWAN("Rejoin again...\r");
+        }
+        
+        TimerStop(&TxNextPacketTimer);   
+        rejoin_flag = true;
+        reset_join_state();
+    } else{
+        ret = LWAN_ERROR;
     }
-    device_state = state;
-    return true;
+    
+    return ret;
 }
 
-bool set_lora_class(int8_t class)
+int lwan_data_send(uint8_t confirm, uint8_t Nbtrials, uint8_t *payload, uint8_t len)
 {
-    if (class >= CLASS_A && class <= CLASS_C) {
-        g_lora_dev.class = class;
-        g_lora_dev.flag = VALID_LORA_CONFIG;
-#ifdef AOS_KV
-        aos_kv_set("lora_dev", &g_lora_dev, sizeof(g_lora_dev));
-#endif
-        return true;
-    }
-    return false;
-}
+    MibRequestConfirm_t mib_req;
+    LoRaMacStatus_t status;
 
-int8_t get_lora_class(void)
-{
-    return g_lora_dev.class;
-}
+    TimerStop(&TxNextPacketTimer);
 
-bool set_lora_dev_eui(uint8_t *eui)
-{
-    memcpy(g_lora_dev.dev_eui, eui, 8);
-    g_lora_dev.flag = VALID_LORA_CONFIG;
-#ifdef AOS_KV
-    aos_kv_set("lora_dev", &g_lora_dev, sizeof(g_lora_dev));
-#endif
-    return true;
-}
-
-uint8_t *get_lora_dev_eui(void)
-{
-    return g_lora_dev.dev_eui;
-}
-
-bool set_lora_app_eui(uint8_t *eui)
-{
-    memcpy(g_lora_dev.app_eui, eui, 8);
-    g_lora_dev.flag = VALID_LORA_CONFIG;
-#ifdef AOS_KV
-    aos_kv_set("lora_dev", &g_lora_dev, sizeof(g_lora_dev));
-#endif
-    return true;
-}
-
-uint8_t *get_lora_app_eui(void)
-{
-    return g_lora_dev.app_eui;
-}
-
-bool set_lora_app_key(uint8_t *key)
-{
-    memcpy(g_lora_dev.app_key, key, 16);
-    g_lora_dev.flag = VALID_LORA_CONFIG;
-#ifdef AOS_KV
-    aos_kv_set("lora_dev", &g_lora_dev, sizeof(g_lora_dev));
-#endif
-    return true;
-}
-
-uint8_t *get_lora_app_key(void)
-{
-    return g_lora_dev.app_key;
-}
-
-bool set_lora_freqband_mask(uint16_t mask)
-{
-    g_lora_dev.mask = mask;
-    g_lora_dev.flag = VALID_LORA_CONFIG;
-#ifdef AOS_KV
-    aos_kv_set("lora_dev", &g_lora_dev, sizeof(g_lora_dev));
-#endif
-    return true;
-}
-
-uint16_t get_lora_freqband_mask(void)
-{
-    return g_lora_dev.mask;
-}
-
-void tx_lora_mac_req(void)
-{
-    if (device_state != DEVICE_STATE_SEND) {
-        device_state = DEVICE_STATE_SEND_MAC;
-    }
-}
-
-// for linkWAN test
-bool set_lora_tx_len(uint16_t len)
-{
-    if (len <= LORAWAN_APP_DATA_BUFF_SIZE) {
-        tx_size = len;
-        return true;
-    }
-    return false;
-}
-
-uint8_t get_lora_tx_len(void)
-{
-    return tx_data.BuffSize;
-}
-
-bool send_lora_link_check(void)
-{
-    MlmeReq_t mlmeReq;
-
-    mlmeReq.Type = MLME_LINK_CHECK;
-    if (next_tx == true) {
-        if (LoRaMacMlmeRequest(&mlmeReq) == LORAMAC_STATUS_OK) {
-            //next_tx = false;
-            return lora_tx_data_payload(1, get_lora_tx_cfm_trials(), NULL, 0);
+    mib_req.Type = MIB_NETWORK_JOINED;
+    status = LoRaMacMibGetRequestConfirm(&mib_req);
+    if (status == LORAMAC_STATUS_OK) {
+        if (mib_req.Param.IsNetworkJoined == true) {
+            g_data_send_msg_type = confirm;
+            memcpy(tx_data.Buff, payload, len);
+            tx_data.BuffSize = len;
+            g_data_send_nbtrials = Nbtrials;
+            g_lwan_device_state = DEVICE_STATE_SEND;
+            return LWAN_SUCCESS;
         }
     }
-    return false;
+    return LWAN_ERROR;
 }
 
-int get_device_status(void)
+int lwan_data_recv(uint8_t *port, uint8_t **payload, uint8_t *size)
 {
-    return device_state;
+    if(!port || !payload || !size)
+        return LWAN_ERROR;
+    *port = rx_data.Port;
+    *size = rx_data.BuffSize;
+    *payload = rx_data.Buff;
+    
+    rx_data.BuffSize = 0;
+    return LWAN_SUCCESS;
 }
 
-JoinMode_t get_lora_join_mode(void)
+uint8_t lwan_dev_battery_get()
 {
-    return lora_param.JoinMode;
-
+    return app_callbacks->BoardGetBatteryLevel();
 }
 
-bool set_lora_join_mode(JoinMode_t mode)
-{
-    lora_param.JoinMode = mode;
-    return true;
-}
-
-LoRaMacParams_t *get_lora_mac_params(void)
-{
-    return &(LoRaMacParams);
-}
-bool set_lora_rx_window_params(uint8_t RX1DRoffset, uint8_t RX2DR, uint32_t RX2Freq)
-{
-    LoRaMacParams_t *mMacParams = get_lora_mac_params();
-    mMacParams->Rx1DrOffset = RX1DRoffset;
-    mMacParams->Rx2Channel.Datarate = RX2DR;
-    mMacParams->Rx2Channel.Frequency = RX2Freq;
-    return true;
-}
-
-bool set_lora_mac_rx1_delay(long rx1delay)
-{
-    LoRaMacParams_t *mMacParams = get_lora_mac_params();
-    mMacParams->ReceiveDelay1 = rx1delay * 1000; //convert to ms, s*1000
-    return true;
-}
-bool set_lora_devaddr(uint8_t *devaddr)
-{
-    memcpy(g_lora_abp_id.devaddr, devaddr, 4);
-    g_lora_abp_id.flag = VALID_LORA_CONFIG;
-#ifdef AOS_KV
-    aos_kv_set("lora_abp", &g_lora_abp_id, sizeof(g_lora_abp_id));
-#endif
-    return true;
-}
-
-uint8_t *get_lora_devaddr(void)
-{
-    return g_lora_abp_id.devaddr;
-}
-
-bool set_lora_appskey(uint8_t *buf)
-{
-    memcpy(g_lora_abp_id.appskey, buf, 16);
-    g_lora_abp_id.flag = VALID_LORA_CONFIG;
-#ifdef AOS_KV
-    aos_kv_set("lora_abp", &g_lora_abp_id, sizeof(g_lora_abp_id));
-#endif
-    return true;
-
-}
-uint8_t *get_lora_appskey(void)
-{
-    return g_lora_abp_id.appskey;
-}
-
-bool set_lora_nwkskey(uint8_t *buf)
-{
-    memcpy(g_lora_abp_id.nwkskey, buf, 16);
-    g_lora_abp_id.flag = VALID_LORA_CONFIG;
-#ifdef AOS_KV
-    aos_kv_set("lora_abp", &g_lora_abp_id, sizeof(g_lora_abp_id));
-#endif
-    return true;
-
-}
-uint8_t *get_lora_nwkskey(void)
-{
-    return g_lora_abp_id.nwkskey;
-}
-bool get_lora_debug(void)
-{
-    return g_lora_debug;
-}
-
-bool set_lora_debug(bool debug)
-{
-    if (debug != 0 && debug != 1)
-        return false;
-    g_lora_debug = debug;
-    return true;
-}
-bool set_lora_app_port(uint8_t port)
-{
-    if (port < 1 || port > 223)
-        return false;
-    tx_data.Port = port;
-    return true;
-}
-
-uint8_t get_lora_app_port(void)
-{
-    return tx_data.Port;
-}
-
-bool set_lora_device_status(DeviceStatus_t ds)
-{
-    device_status = ds;
-    return true;
-}
-DeviceStatus_t get_lora_device_status(void)
-{
-    return device_status;
-}
-
-
-void get_lora_rssi(uint8_t band, int16_t *channel_rssi)
+int lwan_dev_rssi_get(uint8_t band, int16_t *channel_rssi)
 {
     //CN470A Only
     uint8_t FreqBandStartChannelNum[16] = {0, 8, 16, 24, 100, 108, 116, 124, 68, 76, 84, 92, 166, 174, 182, 190};
-    if(band>=16) return;
+    if(band>=16) 
+        return LWAN_ERROR;
 
     Radio.SetModem(MODEM_LORA);
     for (uint8_t i = 0; i < 8; i++) {
@@ -1193,107 +954,59 @@ void get_lora_rssi(uint8_t band, int16_t *channel_rssi)
     }
     
     Radio.Sleep();
+    
+    return LWAN_SUCCESS;
 }
-bool get_lora_report_mode(void)
+
+
+bool lwan_multicast_add(void *multicastInfo )
 {
-    if (lora_param.TxEvent == TX_ON_TIMER) {
-        return true;
-    } else {
+    MibRequestConfirm_t mibset;
+    LoRaMacStatus_t status;
+    MulticastParams_t *pmulticastInfo;
+
+    pmulticastInfo = aos_malloc(sizeof(MulticastParams_t));
+    if (!pmulticastInfo)
         return false;
-    }
-}
-
-bool set_lora_report_mode(int8_t mode)
-{
-    if (mode != 0 || mode != 1) {
-        return false;
-    }
-    if (mode == 1) {
-        lora_param.TxEvent = TX_ON_TIMER;
-    } else if (mode == 0) {
-        lora_param.TxEvent = TX_ON_NONE;
-    }
-    return true;
-}
-int8_t get_lora_tx_power(void)
-{
-    MibRequestConfirm_t mib_req;
-    LoRaMacStatus_t status;
-
-    mib_req.Type = MIB_CHANNELS_TX_POWER;
-    status = LoRaMacMibGetRequestConfirm(&mib_req);
-    if (status == LORAMAC_STATUS_OK) {
-        return mib_req.Param.ChannelsTxPower;
-    }
-    return status;
-}
-
-bool set_lora_tx_power(int8_t pwr)
-{   
-    MibRequestConfirm_t mib_req;
-    LoRaMacStatus_t status;
-
-    mib_req.Type = MIB_CHANNELS_TX_POWER;
-    mib_req.Param.ChannelsTxPower = pwr;
-    status = LoRaMacMibSetRequestConfirm(&mib_req);
-    if (status == LORAMAC_STATUS_OK) {
-        return true;
-    }
-    return false;
-}
-MulticastParams_t *get_lora_cur_multicast(void)
-{
-    MibRequestConfirm_t mib_req;
-    LoRaMacStatus_t status;
-
-    if (next_tx == false) {
-        return NULL;
-    }
-    mib_req.Type = MIB_MULTICAST_CHANNEL;
-    status = LoRaMacMibGetRequestConfirm(&mib_req);
-    if (status == LORAMAC_STATUS_OK) {
-        return mib_req.Param.MulticastList;
-    }
-    return NULL;
-}
-
-bool set_lora_multicast(MulticastParams_t *multicastInfo )
-{
-    MibRequestConfirm_t mib_req;
-    LoRaMacStatus_t status;
-
-    if (next_tx == false) {
-        return false;
-    }
-    return true;
-
-    mib_req.Type = MIB_MULTICAST_CHANNEL;
-    mib_req.Param.MulticastList = multicastInfo;
-    status = LoRaMacMibsetRequestConfirm(&mib_req);
+    memcpy(pmulticastInfo, multicastInfo, sizeof(MulticastParams_t));
+    mibset.Type = MIB_MULTICAST_CHANNEL;
+    mibset.Param.MulticastList = pmulticastInfo;
+    status = LoRaMacMibSetRequestConfirm(&mibset);
     if (status !=  LORAMAC_STATUS_OK) {
         return false;
     }
-
+    return true;
 }
 
-bool lora_del_multicast(uint32_t dev_addr)
+bool lwan_multicast_del(uint32_t dev_addr)
 {
     MulticastParams_t *multiCastNode = get_lora_cur_multicast();
     if (multiCastNode == NULL) {
         return false;
     }
+    
     while (multiCastNode != NULL) {
         if (dev_addr == multiCastNode->Address) {
-            //TBD:
+            MibRequestConfirm_t mibset;
+            LoRaMacStatus_t status;
+            mibset.Type = MIB_MULTICAST_CHANNEL_DEL;
+            mibset.Param.MulticastList = multiCastNode;
+            status = LoRaMacMibSetRequestConfirm(&mibset);
+            if (status !=  LORAMAC_STATUS_OK) {
+                return false;
+            } else {
+                aos_free(mibset.Param.MulticastList);
+                return true;
+            }
         }
         multiCastNode = multiCastNode->Next;
 
     }
+    return false;
 }
 
-uint8_t get_lora_mulitcast_num(void)
+uint8_t lwan_multicast_num_get(void)
 {
-
     MulticastParams_t *multiCastNode = get_lora_cur_multicast();
     if (multiCastNode == NULL) {
         return 0;
@@ -1306,112 +1019,19 @@ uint8_t get_lora_mulitcast_num(void)
     return num;
 }
 
-uint8_t get_device_battery()
+void lwan_sys_reboot(int8_t mode)
 {
-    return app_callbacks->BoardGetBatteryLevel();
-}
-
-
-
-bool get_lora_join_params(uint8_t *bJoin, uint8_t *bAuto, uint16_t *joinInterval, uint16_t *joinRetryCnt)
-{
-    *bJoin = gAutoJoin;
-    *bAuto = gAutoJoin;
-    *joinInterval = gJoinInterval;
-    *joinRetryCnt = get_lora_tx_cfm_trials();
-    return true;
-
-
-}
-
-bool init_lora_join(uint8_t bJoin, uint8_t bAutoJoin, uint16_t joinInterval, uint16_t joinRetryCnt)
-{
-
-    bool ret = false;
-    if(bJoin == 0){//stop join
-        TimerStop(&TxNextPacketTimer);
-        MibRequestConfirm_t mib_req;
-        LoRaMacStatus_t status;
-        mib_req.Type = MIB_NETWORK_JOINED;
-        mib_req.Param.IsNetworkJoined = false;
-        status = LoRaMacMibSetRequestConfirm(&mib_req);
-
-        if (status == LORAMAC_STATUS_OK) {
-            device_state = DEVICE_STATE_SLEEP;
-            rejoin_flag = bAutoJoin;
-            ret = true;
+    if (mode == 0) {
+	    HW_Reset(0);
+    } else if (mode == 1) {
+        if (next_tx == true) {
+            prepare_tx_frame();
+            next_tx = send_frame();
+            HW_Reset(0);
         }
-    } else if(bJoin == 1){  
-        JoinSettings_t join_settings;
-        join_settings.autoJoin = bAutoJoin;
-        join_settings.joinInterval = (joinInterval>=7 && joinInterval<=255)?joinInterval:gJoinInterval;
-        join_settings.joinTrials = (joinRetryCnt>=1 && joinRetryCnt<=256)?(joinRetryCnt-1):(gJoinTrials-1);
-#ifdef AOS_KV        
-        int kvRet = aos_kv_set("join", &join_settings, sizeof(join_settings));
-#endif        
-        
-        gJoinTrials = join_settings.joinTrials +1;
-        gJoinInterval = join_settings.joinInterval;
-
-        rejoin_flag = bAutoJoin;
-        MibRequestConfirm_t mib_req;
-        mib_req.Type = MIB_NETWORK_JOINED;
-        LoRaMacStatus_t status = LoRaMacMibGetRequestConfirm(&mib_req);
-        if (status == LORAMAC_STATUS_OK) {
-            if (mib_req.Param.IsNetworkJoined == true) {
-                mib_req.Type = MIB_NETWORK_JOINED;
-                mib_req.Param.IsNetworkJoined = false;
-                LoRaMacMibSetRequestConfirm(&mib_req);
-                DBG_LINKWAN("Rejoin again...\r");
-            }
-            
-            reset_join_state();
-            g_join_method = DEF_JOIN_METHOD;
-            TimerStop(&TxNextPacketTimer);
-            TimerSetValue(&TxNextPacketTimer, joinInterval);
-            TimerStart(&TxNextPacketTimer);
-            return true;
-
-        }
-    } else{
-        return false;
+    } else if (mode == 7) {
+        HW_Reset(1);
     }
 }
 
-
-bool lora_tx_data_payload(uint8_t confirm, uint8_t Nbtrials, uint8_t *payload, uint8_t len)
-{
-    MibRequestConfirm_t mib_req;
-    LoRaMacStatus_t status;
-
-    TimerStop(&TxNextPacketTimer);
-
-    mib_req.Type = MIB_NETWORK_JOINED;
-    status = LoRaMacMibGetRequestConfirm(&mib_req);
-
-    if (status == LORAMAC_STATUS_OK) {
-        if (mib_req.Param.IsNetworkJoined == true) {
-            is_tx_confirmed = confirm;
-            memcpy(tx_data.Buff, payload, len);
-            tx_data.BuffSize = len;
-            set_lora_tx_cfm_trials(Nbtrials);
-            device_state = DEVICE_STATE_SEND;
-            return true;
-
-        } else {
-            rejoin_flag = true;
-            device_state = DEVICE_STATE_JOIN;
-            return false;
-        }
-    }
-    return false;
-}
-
-bool is_at_available() {
-    if(device_state == DEVICE_STATE_SLEEP 
-        && LoRaMacState == 0)
-        return true;
-    
-    return false;
-}
 

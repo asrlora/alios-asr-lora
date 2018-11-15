@@ -4,6 +4,7 @@
 
 #include "hw.h"
 #include "low_power.h"
+#include "linkwan_ica_at.h"
 #include "linkwan.h"
 #include "timeServer.h"
 //#include "version.h"
@@ -22,7 +23,6 @@
 
 #define APP_TX_DUTYCYCLE 30000
 #define LORAWAN_ADR_ON 1
-#define LORAWAN_CONFIRMED_MSG ENABLE
 #define LORAWAN_APP_PORT 100
 #define JOINREQ_NBTRIALS 3
 
@@ -47,36 +47,22 @@ static LoRaMainCallback_t LoRaMainCallbacks = {
     LoraRxData
 };
 
-static LoRaParam_t LoRaParamInit = {
-    TX_ON_TIMER,
-    APP_TX_DUTYCYCLE,
-    LORAWAN_ADR_ON,
-    DR_0,
-    LORAWAN_PUBLIC_NETWORK,
-    JOINREQ_NBTRIALS
-};
-
 static void lora_task_entry(void *arg)
 {
     BoardInitMcu();
     lora_init(&LoRaMainCallbacks);
-    linkwan_at_custom_handler_set(process_loratest_at);
+    linkwan_at_custom_handler_set(loratest_at_process);   
     lora_fsm( );
 }
 
-//ktask_t g_lora_task;
-//cpu_stack_t g_lora_task_stack[512];
 int application_start( void )
 {
-//    krhino_task_create(&g_lora_task, "lora_task", NULL,
-//                       5, 0u, g_lora_task_stack,
-//                       512, lora_task_entry, 1u);
     lora_task_entry(NULL);
+    return 0;
 }
 
 static void LoraTxData( lora_AppData_t *AppData)
 {
-    extern uint32 tx_timer_cnt;
     AppData->BuffSize = sprintf( (char *) AppData->Buff, "linklora asr data++");
     PRINTF_RAW("tx: %s\r\n", AppData->Buff );
     AppData->Port = LORAWAN_APP_PORT;

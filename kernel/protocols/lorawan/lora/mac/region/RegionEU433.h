@@ -39,6 +39,8 @@
 #ifndef __REGION_EU433_H__
 #define __REGION_EU433_H__
 
+#include "LoRaMac.h"
+
 /*!
  * LoRaMac maximum number of channels
  */
@@ -195,6 +197,39 @@
  * LoRaMac maximum number of bands
  */
 #define EU433_MAX_NB_BANDS                          1
+
+/*
+ * CLASS B
+ */
+/*!
+ * Beacon frequency
+ */
+#define EU433_BEACON_CHANNEL_FREQ                   434665000
+
+/*!
+ * Payload size of a beacon frame
+ */
+#define EU433_BEACON_SIZE                           17
+
+/*!
+ * Size of RFU 1 field
+ */
+#define EU433_RFU1_SIZE                             2
+
+/*!
+ * Size of RFU 2 field
+ */
+#define EU433_RFU2_SIZE                             0
+
+/*!
+ * Datarate of the beacon channel
+ */
+#define EU433_BEACON_CHANNEL_DR                     DR_3
+
+/*!
+ * Bandwith of the beacon channel
+ */
+#define EU433_BEACON_CHANNEL_BW                     0
 
 /*!
  * Band 0 definition
@@ -464,6 +499,13 @@ void RegionEU433SetContinuousWave( ContinuousWaveParams_t* continuousWave );
  * \retval newDr Computed datarate.
  */
 uint8_t RegionEU433ApplyDrOffset( uint8_t downlinkDwellTime, int8_t dr, int8_t drOffset );
+
+/*!
+ * \brief Sets the radio into beacon reception mode
+ *
+ * \param [IN] rxBeaconSetup Pointer to the function parameters
+ */
+ void RegionEU433RxBeaconSetup( RxBeaconSetup_t* rxBeaconSetup, uint8_t* outDr );
 
 /*! \} defgroup REGIONEU433 */
 

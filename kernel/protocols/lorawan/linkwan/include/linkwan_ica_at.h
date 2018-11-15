@@ -22,6 +22,8 @@
 #define LORA_AT_CNUMMUTICAST "+CNUMMUTICAST"  // mcast num
 #define LORA_AT_CFREQBANDMASK "+CFREQBANDMASK"  // freqband mask
 #define LORA_AT_CULDLMODE "+CULDLMODE"  // ul and dl
+#define LORA_AT_CKEYSPROTECT "+CKEYSPROTECT"  // keys protect
+#define LORA_AT_CLPM "+CLPM"  // low power
 
 #define LORA_AT_CWORKMODE "+CWORKMODE"  // work mode
 #define LORA_AT_CREPEATERFREQ "+CREPEATERFREQ"  // repeater freq
@@ -48,6 +50,7 @@
 #define LORA_AT_CSAVE "+CSAVE"  // save cfg
 #define LORA_AT_CRESTORE "+CRESTORE"  // restore def cfg
 
+#define LORA_AT_PINGSLOTINFOREQ "+CPINGSLOTINFOREQ" //class B send pingSlotInfoReq  
 
 // repeater
 #define LORA_AT_CREPEATERFILTER "+CREPEATERFILTER"
@@ -63,11 +66,12 @@
 #define LORA_AT_IREBOOT "+IREBOOT"
 #define LORA_AT_IDEFAULT "+IDEFAULT"
 
-#define LORA_AT_PROMPT  "ASR6501:~# "
-
 typedef bool (*linkwan_at_custom_handler_t) (uint8_t *buf, uint32_t size);    
-    
+
+void linkwan_at_init(void);
+void linkwan_at_process(void);
 void linkwan_serial_input(uint8_t cmd);
 int linkwan_serial_output(uint8_t *buffer, int len);
 void linkwan_at_custom_handler_set(linkwan_at_custom_handler_t handler);
+void linkwan_at_prompt_print();
 #endif

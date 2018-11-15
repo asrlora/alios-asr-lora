@@ -39,6 +39,8 @@
 #ifndef __REGION_AU915_H__
 #define __REGION_AU915_H__
 
+#include "LoRaMac.h"
+
 /*!
  * LoRaMac maximum number of channels
  */
@@ -173,6 +175,49 @@
  * Second reception window channel datarate definition.
  */
 #define AU915_RX_WND_2_DR                           DR_8
+
+/*
+ * CLASS B
+ */
+/*!
+ * Beacon frequency
+ */
+#define AU915_BEACON_CHANNEL_FREQ                   923300000
+
+/*!
+ * Beacon frequency channel stepwidth
+ */
+#define AU915_BEACON_CHANNEL_STEPWIDTH              600000
+
+/*!
+ * Number of possible beacon channels
+ */
+#define AU915_BEACON_NB_CHANNELS                    8
+
+/*!
+ * Payload size of a beacon frame
+ */
+#define AU915_BEACON_SIZE                           19
+
+/*!
+ * Size of RFU 1 field
+ */
+#define AU915_RFU1_SIZE                             3
+
+/*!
+ * Size of RFU 2 field
+ */
+#define AU915_RFU2_SIZE                             1
+
+/*!
+ * Datarate of the beacon channel
+ */
+#define AU915_BEACON_CHANNEL_DR                     DR_10
+
+/*!
+ * Bandwith of the beacon channel
+ */
+#define AU915_BEACON_CHANNEL_BW                     2
 
 /*!
  * LoRaMac maximum number of bands
@@ -453,6 +498,13 @@ void RegionAU915SetContinuousWave( ContinuousWaveParams_t* continuousWave );
  * \retval newDr Computed datarate.
  */
 uint8_t RegionAU915ApplyDrOffset( uint8_t downlinkDwellTime, int8_t dr, int8_t drOffset );
+
+/*!
+ * \brief Sets the radio into beacon reception mode
+ *
+ * \param [IN] rxBeaconSetup Pointer to the function parameters
+ */
+ void RegionAU915RxBeaconSetup( RxBeaconSetup_t* rxBeaconSetup, uint8_t* outDr );
 
 /*! \} defgroup REGIONAU915 */
 

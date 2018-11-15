@@ -39,6 +39,8 @@
 #ifndef __REGION_AS923_H__
 #define __REGION_AS923_H__
 
+#include "LoRaMac.h"
+
 /*!
  * LoRaMac maximum number of channels
  */
@@ -203,6 +205,39 @@
  * Second reception window channel datarate definition.
  */
 #define AS923_RX_WND_2_DR                           DR_2
+
+/*
+ * CLASS B
+ */
+/*!
+ * Beacon frequency
+ */
+#define AS923_BEACON_CHANNEL_FREQ                   923400000
+
+/*!
+ * Payload size of a beacon frame
+ */
+#define AS923_BEACON_SIZE                           17
+
+/*!
+ * Size of RFU 1 field
+ */
+#define AS923_RFU1_SIZE                             2
+
+/*!
+ * Size of RFU 2 field
+ */
+#define AS923_RFU2_SIZE                             0
+
+/*!
+ * Datarate of the beacon channel
+ */
+#define AS923_BEACON_CHANNEL_DR                     DR_3
+
+/*!
+ * Bandwith of the beacon channel
+ */
+#define AS923_BEACON_CHANNEL_BW                     0
 
 /*!
  * Maximum number of bands
@@ -501,6 +536,13 @@ void RegionAS923SetContinuousWave( ContinuousWaveParams_t* continuousWave );
  * \retval newDr Computed datarate.
  */
 uint8_t RegionAS923ApplyDrOffset( uint8_t downlinkDwellTime, int8_t dr, int8_t drOffset );
+
+/*!
+ * \brief Sets the radio into beacon reception mode
+ *
+ * \param [IN] rxBeaconSetup Pointer to the function parameters
+ */
+ void RegionAS923RxBeaconSetup( RxBeaconSetup_t* rxBeaconSetup, uint8_t* outDr );
 
 /*! \} defgroup REGIONAS923 */
 

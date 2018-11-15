@@ -39,6 +39,8 @@
 #ifndef __REGION_EU868_H__
 #define __REGION_EU868_H__
 
+#include "LoRaMac.h"
+
 /*!
  * LoRaMac maximum number of channels
  */
@@ -187,6 +189,39 @@
  * Second reception window channel datarate definition.
  */
 #define EU868_RX_WND_2_DR                           DR_0
+
+/*
+ * CLASS B
+ */
+/*!
+ * Beacon frequency
+ */
+#define EU868_BEACON_CHANNEL_FREQ                   869525000
+
+/*!
+ * Payload size of a beacon frame
+ */
+#define EU868_BEACON_SIZE                           17
+
+/*!
+ * Size of RFU 1 field
+ */
+#define EU868_RFU1_SIZE                             2
+
+/*!
+ * Size of RFU 2 field
+ */
+#define EU868_RFU2_SIZE                             0
+
+/*!
+ * Datarate of the beacon channel
+ */
+#define EU868_BEACON_CHANNEL_DR                     DR_3
+
+/*!
+ * Bandwith of the beacon channel
+ */
+#define EU868_BEACON_CHANNEL_BW                     0
 
 /*!
  * Maximum number of bands
@@ -485,6 +520,13 @@ void RegionEU868SetContinuousWave( ContinuousWaveParams_t* continuousWave );
  * \retval newDr Computed datarate.
  */
 uint8_t RegionEU868ApplyDrOffset( uint8_t downlinkDwellTime, int8_t dr, int8_t drOffset );
+
+/*!
+ * \brief Sets the radio into beacon reception mode
+ *
+ * \param [IN] rxBeaconSetup Pointer to the function parameters
+ */
+void RegionEU868RxBeaconSetup( RxBeaconSetup_t* rxBeaconSetup, uint8_t* outDr );
 
 /*! \} defgroup REGIONEU868 */
 

@@ -34,12 +34,15 @@ Maintainer: Miguel Luis ( Semtech ), Gregory Cristian ( Semtech ) and Daniel Jae
 #include "RegionCN470A.h"
 #include "debug.h"
 
+#include "lwan_config.h"
 #include "linkwan.h"
 #include "commissioning.h"
 
 // Definitions
 #define CHANNELS_MASK_SIZE 1
 #define RADIO_WAKEUP_TIME 2
+#define CHANNELS_MASK_CNTL_RFU 0x0FF
+#define CHANNELS_MASK_ALL_ON   0x0FE
 
 // Global attributes
 /*!
@@ -69,6 +72,8 @@ static uint16_t ChannelsDefaultMask[CHANNELS_MASK_SIZE];
 uint8_t NumFreqBand;
 uint8_t FreqBandNum[16] = {0};
 uint8_t FreqBandStartChannelNum[16] = {0, 8, 16, 24, 100, 108, 116, 124, 68, 76, 84, 92, 166, 174, 182, 190};
+uint8_t ChMaskCntlToStartBandNum[8] = {0, 2, 12, 14, CHANNELS_MASK_ALL_ON, CHANNELS_MASK_CNTL_RFU,
+                                       CHANNELS_MASK_CNTL_RFU, CHANNELS_MASK_CNTL_RFU};
 uint8_t NextAvailableFreqBandIdx;
 uint16_t scan_mask;
 uint8_t InterFreqRx2Chan[16] = {75, 83, 91, 99, 173, 181, 189, 197, 7, 15, 23, 31, 107, 115, 123, 131};
@@ -267,6 +272,34 @@ PhyParam_t RegionCN470AGetPhyParam( GetPhyParams_t *getPhy )
             phyParam.Value = 48;
             break;
         }
+        case PHY_BEACON_CHANNEL_FREQ:
+        {
+            phyParam.Value = Channels[0].Frequency;
+            break;
+        }
+        case PHY_BEACON_FORMAT:
+        {
+            phyParam.BeaconFormat.BeaconSize = CN470A_BEACON_SIZE;
+            phyParam.BeaconFormat.Rfu1Size = CN470A_RFU1_SIZE;
+            phyParam.BeaconFormat.Rfu2Size = CN470A_RFU2_SIZE;
+            break;
+        }
+        case PHY_BEACON_CHANNEL_DR:
+        {
+            phyParam.Value = CN470A_BEACON_CHANNEL_DR;
+            break;
+        }
+        case PHY_BEACON_CHANNEL_STEPWIDTH:
+        {
+            phyParam.Value = CN470A_BEACON_CHANNEL_STEPWIDTH;
+            break;
+        }
+        case PHY_BEACON_NB_CHANNELS:
+        {
+            phyParam.Value = CN470A_BEACON_NB_CHANNELS;
+            break;
+        }
+
         default: {
             break;
         }
@@ -305,11 +338,11 @@ void RegionCN470AInitDefaults( InitType_t type )
             scan_mask = 0;
 
             //save other freqband from mask
-            for (uint8_t i = 0; i < 16; i++) {
-                if ((get_lora_freqband_mask() & (1 << i)) != 0 && i != 1) {
-                    FreqBandNum[NumFreqBand++] = i;
-                }
-            }
+            //for (uint8_t i = 0; i < 16; i++) {
+            //    if ((get_lora_freqband_mask() & (1 << i)) != 0 && i != 1) {
+            //        FreqBandNum[NumFreqBand++] = i;
+            //    }
+            //}
             NextAvailableFreqBandIdx = 0;
             break;
         }
@@ -396,7 +429,18 @@ bool RegionCN470AChanMaskSet( ChanMaskSetParams_t *chanMaskSet )
 {
     switch ( chanMaskSet->ChannelsMaskType ) {
         case CHANNELS_MASK: {
-            RegionCommonChanMaskCopy( ChannelsMask, chanMaskSet->ChannelsMaskIn, 1 );
+            //set default freqband = 1A2(No.=1,471.9Mhz)
+            NumFreqBand = 1;
+            FreqBandNum[0] = 1; //1A2
+            scan_mask = 0;
+            //save other freqband from mask
+            for (uint8_t i = 0; i < 16; i++) {
+                if ((*((uint8_t *)chanMaskSet->ChannelsMaskIn +i) == 0xFF) && i != 1) {
+                    FreqBandNum[NumFreqBand++] = i;
+                }
+            }
+            NextAvailableFreqBandIdx = 0;
+            ChannelsMask[0] = LC( 1 ) + LC( 2 ) + LC( 3 ) + LC( 4 ) + LC( 5 ) + LC( 6 ) + LC( 7 ) + LC( 8 ) ;
             break;
         }
         case CHANNELS_DEFAULT_MASK: {
@@ -432,7 +476,7 @@ bool RegionCN470AAdrNext( AdrNextParams_t *adrNext, int8_t *drOut, int8_t *txPow
                 adrAckReq = false;
             }
             if ( adrNext->AdrAckCounter >= ( CN470A_ADR_ACK_LIMIT + CN470A_ADR_ACK_DELAY ) ) {
-                if ( ( adrNext->AdrAckCounter % CN470A_ADR_ACK_DELAY ) == 1 ) {
+                if ( ( adrNext->AdrAckCounter % CN470A_ADR_ACK_DELAY ) == 0 ) {
                     // Decrease the datarate
                     getPhy.Attribute = PHY_NEXT_LOWER_TX_DR;
                     getPhy.Datarate = datarate;
@@ -484,14 +528,13 @@ bool RegionCN470ARxConfig( RxConfigParams_t *rxConfig, int8_t *datarate )
     int8_t phyDr = 0;
     uint32_t frequency = rxConfig->Frequency;
 
-    TimerTime_t curTime = TimerGetCurrentTime( );
     bool iqInverted;
 
     if ( Radio.GetStatus( ) != RF_IDLE ) {
         return false;
     }
 
-    if ( rxConfig->Window == 0 ) {
+    if ( rxConfig->RxSlot == RX_SLOT_WIN_1 ) {
         // Apply window 1 frequency
         frequency = Channels[rxConfig->Channel].Frequency;
         // Apply the alternative RX 1 window frequency, if it is available
@@ -500,8 +543,10 @@ bool RegionCN470ARxConfig( RxConfigParams_t *rxConfig, int8_t *datarate )
         }
     }
 
-    if (rxConfig->Window == 1) {
-        if (get_lora_freq_mode() == FREQ_MODE_INTER) {
+    if (rxConfig->RxSlot == RX_SLOT_WIN_2) {
+        uint8_t uldl_mode;
+        lwan_dev_config_get(DEV_CONFIG_ULDL_MODE, &uldl_mode);
+        if (uldl_mode == ULDL_MODE_INTER) {
             frequency = 470300000 + (InterFreqRx2Chan[TxFreqBandNum]) * 200000;
         } else {
             frequency = 470300000 + (IntraFreqRx2Chan[TxFreqBandNum]) * 200000;
@@ -511,7 +556,7 @@ bool RegionCN470ARxConfig( RxConfigParams_t *rxConfig, int8_t *datarate )
     // Read the physical datarate from the datarates table
     phyDr = DataratesCN470A[dr];
 
-    if (rxConfig->NodeWorkMode == NODE_MODE_REPEATER) {
+    if (rxConfig->NodeWorkMode == WORK_MODE_REPEATER) {
         frequency = rxConfig->RepeaterFrequency;
         iqInverted = false;
     } else {
@@ -540,6 +585,8 @@ bool RegionCN470ARxConfig( RxConfigParams_t *rxConfig, int8_t *datarate )
 
     *datarate = (uint8_t) dr;
     rxConfig->Frequency = frequency;
+    
+    DBG_LINKWAN("Rx, Freq %u, DR %u, window %u\r\n", (unsigned int)frequency, dr, rxConfig->RxSlot+1);
     return true;
 }
 
@@ -562,7 +609,7 @@ bool RegionCN470ATxConfig( TxConfigParams_t *txConfig, int8_t *txPower, TimerTim
     // Calculate physical TX power
     phyTxPower = RegionCommonComputeTxPower( txPowerLimited, txConfig->MaxEirp, txConfig->AntennaGain );
 
-    if (txConfig->NodeWorkMode == NODE_MODE_REPEATER) {
+    if (txConfig->NodeWorkMode == WORK_MODE_REPEATER) {
         frequency = txConfig->RepeaterFrequency;
         preambleLen = PreambleLenthCN470A[txConfig->Datarate];
         iqInverted = true;
@@ -590,8 +637,8 @@ bool RegionCN470ATxConfig( TxConfigParams_t *txConfig, int8_t *txPower, TimerTim
 
     *txPower = txConfig->TxPower;
 
-    DBG_LINKWAN("Tx, Power: %d, Band %d, Freq: %d,DR: %d, len: %d, duration %d, at %d\r\n",
-                phyTxPower, TxFreqBandNum, frequency, txConfig->Datarate, txConfig->PktLen, *txTimeOnAir, curTime);
+    DBG_LINKWAN("Tx, Power: %d, Band %u, Freq: %u,DR: %d, len: %u, duration %llu, at %llu\r\n",
+                phyTxPower, TxFreqBandNum, (unsigned int)frequency, txConfig->Datarate, txConfig->PktLen, *txTimeOnAir, curTime);
     return true;
 }
 
@@ -603,6 +650,10 @@ uint8_t RegionCN470ALinkAdrReq( LinkAdrReqParams_t *linkAdrReq, int8_t *drOut, i
     uint8_t nextIndex = 0;
     uint8_t bytesProcessed = 0;
     uint16_t chMask = 0;
+    uint8_t bandNum;
+    uint16_t chMaskNew[8] = {0};
+    ChanMaskSetParams_t chanMaskSet;
+    uint8_t i;
 
     while ( bytesProcessed < linkAdrReq->PayloadSize ) {
         // Get ADR request parameters
@@ -622,31 +673,38 @@ uint8_t RegionCN470ALinkAdrReq( LinkAdrReqParams_t *linkAdrReq, int8_t *drOut, i
         chMask = linkAdrParams.ChMask;
 
         // Verify channels mask
-        if ( ( linkAdrParams.ChMaskCtrl == 0 ) && ( chMask == 0 ) ) {
+        if (linkAdrParams.ChMaskCtrl > 7)
+        {
+            status &= 0xFE; // Channel Ctrl KO
+        }
+        bandNum = ChMaskCntlToStartBandNum[linkAdrParams.ChMaskCtrl];
+        if (bandNum == CHANNELS_MASK_CNTL_RFU)
+        {
+            status &= 0xFE; // Channel Ctrl KO
+        }
+        if ( (( linkAdrParams.ChMaskCtrl == 0 ) && ( chMask == 0 )) ||
+             (( bandNum == CHANNELS_MASK_ALL_ON ) && ( chMask != 0xFFFF )) ) {
             status &= 0xFE; // Channel mask KO
-        } else if ( ( ( linkAdrParams.ChMaskCtrl >= 1 ) && ( linkAdrParams.ChMaskCtrl <= 5 )) ||
-                    ( linkAdrParams.ChMaskCtrl >= 7 ) ) {
-            // RFU
-            status &= 0xFE; // Channel mask KO
+        } else if ( bandNum == CHANNELS_MASK_ALL_ON ) {
+            memset((uint8_t *)chMaskNew, 0xFF, sizeof(chMaskNew));
+            chanMaskSet.ChannelsMaskIn = chMaskNew;
         } else {
-            for ( uint8_t i = 0; i < CN470A_MAX_NB_CHANNELS; i++ ) {
-                if ( linkAdrParams.ChMaskCtrl == 6 ) {
-                    if ( Channels[i].Frequency != 0 ) {
-                        chMask |= 1 << i;
-                    }
+            for (i = 0; i < NumFreqBand; i++) {
+                *((uint8_t *)chMaskNew + FreqBandNum[i]) = 0xFF;
+            }
+            for (i = 0; i < 2; i++) {
+                if ((((chMask >> (i * 8)) & 0xFF) == 0x0) && ((bandNum + i) != 1)){
+                    *((uint8_t *)chMaskNew + (bandNum + i)) = 0;
                 } else {
-                    if ( ( ( chMask & ( 1 << i ) ) != 0 ) &&
-                         ( Channels[i].Frequency == 0 ) ) {
-                        // Trying to enable an undefined channel
-                        status &= 0xFE; // Channel mask KO
-                    }
+                    *((uint8_t *)chMaskNew + (bandNum + i)) = 0xFF;
                 }
             }
+            chanMaskSet.ChannelsMaskIn = chMaskNew;
         }
     }
 
     // Verify datarate
-    if ( RegionCommonChanVerifyDr( CN470A_MAX_NB_CHANNELS, &chMask, linkAdrParams.Datarate, CN470A_TX_MIN_DATARATE,
+    if ( RegionCommonChanVerifyDr( CHANNELS_MASK_SIZE, &chMask, linkAdrParams.Datarate, CN470A_TX_MIN_DATARATE,
                                    CN470A_TX_MAX_DATARATE, Channels  ) == false ) {
         status &= 0xFD; // Datarate KO
     }
@@ -664,15 +722,16 @@ uint8_t RegionCN470ALinkAdrReq( LinkAdrReqParams_t *linkAdrReq, int8_t *drOut, i
 
     // Update channelsMask if everything is correct
     if ( status == 0x07 ) {
-        if ( linkAdrParams.NbRep == 0 ) {
-            // Value of 0 is not allowed, revert to default.
-            linkAdrParams.NbRep = 1;
+        chanMaskSet.ChannelsMaskType = CHANNELS_MASK;
+        if (RegionCN470AChanMaskSet(&chanMaskSet) == false)
+        {
+            status &= 0xFE;
+        } else {
+            if ( linkAdrParams.NbRep == 0 ) {
+                // Value of 0 is not allowed, revert to default.
+                linkAdrParams.NbRep = 1;
+            }
         }
-
-        // Set the channels mask to a default value
-        memset( ChannelsMask, 0, sizeof( ChannelsMask ) );
-        // Update the channels mask
-        ChannelsMask[0] = chMask;
     }
 
     // Update status variables
@@ -830,13 +889,13 @@ void RegionCN470ACalcBackOff( CalcBackOffParams_t *calcBackOff )
     }
 }
 
-static uint8_t find_next_available_freqband()
+static uint8_t find_next_available_freqband_index()
 {
     uint8_t index;
-    uint8_t freqband;
+    uint8_t freqband_index;
 
     if (scan_mask == 0) {
-        for (index = 0; index < NumFreqBand - 1; index++) {
+        for (index = 1; index < NumFreqBand; index++) {
             scan_mask |= (1 << index);
         }
     }
@@ -845,12 +904,12 @@ static uint8_t find_next_available_freqband()
         return 0;
     }
 
-    freqband = randr(0, NumFreqBand - 2);
-    while ((scan_mask & (1 << freqband)) == 0) {
-        freqband = ((freqband + 1) % (NumFreqBand - 1));
+    freqband_index = randr(1, NumFreqBand-1);
+    while ((scan_mask & (1 << freqband_index)) == 0) {
+        freqband_index = ((freqband_index + 1) % (NumFreqBand - 1));
     }
-    scan_mask &= (~(1 << freqband));
-    return freqband + 1;
+    scan_mask &= (~(1 << freqband_index));
+    return freqband_index;
 }
 
 bool RegionCN470ANextChannel( NextChanParams_t *nextChanParams, uint8_t *channel, TimerTime_t *time,
@@ -904,23 +963,27 @@ bool RegionCN470ANextChannel( NextChanParams_t *nextChanParams, uint8_t *channel
     LoRaMacMibGetRequestConfirm(&mib_req);
 
     if (mib_req.Param.IsNetworkJoined == false) {
-        if (nextChanParams->joinmethod == STORED_JOIN_METHOD) {
+        if (nextChanParams->joinmethod == JOIN_METHOD_STORED) {
             if (nextChanParams->freqband > 15) {
                 nextChanParams->freqband = 1;  // reset to defautl value
             }
             TxFreqBandNum = nextChanParams->freqband;
         } else {
-            if (nextChanParams->joinmethod == SCAN_JOIN_METHOD && nextChanParams->update_freqband) {
-                NextAvailableFreqBandIdx = find_next_available_freqband();
-            } else if (nextChanParams->joinmethod == DEF_JOIN_METHOD) {
+            if (nextChanParams->joinmethod == JOIN_METHOD_SCAN && nextChanParams->update_freqband) {
+                NextAvailableFreqBandIdx = find_next_available_freqband_index();
+            } else if (nextChanParams->joinmethod == JOIN_METHOD_DEF) {
                 NextAvailableFreqBandIdx = 0;
             }
             nextChanParams->update_freqband = false;
             TxFreqBandNum = FreqBandNum[NextAvailableFreqBandIdx];
         }
+    } else {
+        TxFreqBandNum = nextChanParams->freqband;
     }
 
-    if (get_lora_freq_mode() == FREQ_MODE_INTER) {
+    uint8_t uldl_mode;
+    lwan_dev_config_get(DEV_CONFIG_ULDL_MODE, &uldl_mode);
+    if (uldl_mode == ULDL_MODE_INTER) {
         if (FreqBandNum[NextAvailableFreqBandIdx] > 7) {
             RxFreqBandNum = TxFreqBandNum - 8;
         } else {
@@ -1014,7 +1077,7 @@ bool RegionCN470AChannelsRemove( ChannelRemoveParams_t *channelRemove  )
 {
     uint8_t id = channelRemove->ChannelId;
 
-    if ( id < CN470A_NUMB_DEFAULT_CHANNELS ) {
+    if ( id > CN470A_NUMB_DEFAULT_CHANNELS ) {
         return false;
     }
 
@@ -1048,3 +1111,23 @@ uint8_t RegionCN470AApplyDrOffset( uint8_t downlinkDwellTime, int8_t dr, int8_t 
     }
     return datarate;
 }
+
+
+void RegionCN470ARxBeaconSetup( RxBeaconSetup_t* rxBeaconSetup, uint8_t* outDr )
+{
+    RegionCommonRxBeaconSetupParams_t regionCommonRxBeaconSetup;
+
+    regionCommonRxBeaconSetup.Datarates = DataratesCN470A;
+    regionCommonRxBeaconSetup.Frequency = rxBeaconSetup->Frequency;
+    regionCommonRxBeaconSetup.BeaconSize = CN470A_BEACON_SIZE;
+    regionCommonRxBeaconSetup.BeaconDatarate = CN470A_BEACON_CHANNEL_DR;
+    regionCommonRxBeaconSetup.BeaconChannelBW = CN470A_BEACON_CHANNEL_BW;
+    regionCommonRxBeaconSetup.RxTime = rxBeaconSetup->RxTime;
+    regionCommonRxBeaconSetup.SymbolTimeout = rxBeaconSetup->SymbolTimeout;
+
+    RegionCommonRxBeaconSetup( &regionCommonRxBeaconSetup );
+
+    // Store downlink datarate
+    *outDr = CN470A_BEACON_CHANNEL_DR;
+}
+

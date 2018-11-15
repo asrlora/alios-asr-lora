@@ -39,6 +39,8 @@
 #ifndef __REGION_CN779_H__
 #define __REGION_CN779_H__
 
+#include "LoRaMac.h"
+
 /*!
  * LoRaMac maximum number of channels
  */
@@ -190,6 +192,39 @@
  * Second reception window channel datarate definition.
  */
 #define CN779_RX_WND_2_DR                           DR_0
+
+/*
+ * CLASS B
+ */
+/*!
+ * Beacon frequency
+ */
+#define CN779_BEACON_CHANNEL_FREQ                   785000000
+
+/*!
+ * Payload size of a beacon frame
+ */
+#define CN779_BEACON_SIZE                           17
+
+/*!
+ * Size of RFU 1 field
+ */
+#define CN779_RFU1_SIZE                             2
+
+/*!
+ * Size of RFU 2 field
+ */
+#define CN779_RFU2_SIZE                             0
+
+/*!
+ * Datarate of the beacon channel
+ */
+#define CN779_BEACON_CHANNEL_DR                     DR_3
+
+/*!
+ * Bandwith of the beacon channel
+ */
+#define CN779_BEACON_CHANNEL_BW                     0
 
 /*!
  * LoRaMac maximum number of bands
@@ -463,6 +498,13 @@ void RegionCN779SetContinuousWave( ContinuousWaveParams_t* continuousWave );
  * \retval newDr Computed datarate.
  */
 uint8_t RegionCN779ApplyDrOffset( uint8_t downlinkDwellTime, int8_t dr, int8_t drOffset );
+
+/*!
+ * \brief Sets the radio into beacon reception mode
+ *
+ * \param [IN] rxBeaconSetup Pointer to the function parameters
+ */
+ void RegionCN779RxBeaconSetup( RxBeaconSetup_t* rxBeaconSetup, uint8_t* outDr );
 
 /*! \} defgroup REGIONCN779 */
 

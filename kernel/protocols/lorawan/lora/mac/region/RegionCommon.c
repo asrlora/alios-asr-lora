@@ -92,8 +92,13 @@ bool RegionCommonChanVerifyDr( uint8_t nbChannels, uint16_t* channelsMask, int8_
         {
             if( ( ( channelsMask[k] & ( 1 << j ) ) != 0 ) )
             {// Check datarate validity for enabled channels
+#ifdef CONFIG_LINKWAN 
+                if( RegionCommonValueInRange( dr, ( channels[(i + j) % 8].DrRange.Fields.Min & 0x0F ),
+                                                  ( channels[(i + j) % 8].DrRange.Fields.Max & 0x0F ) ) == 1 )
+#else
                 if( RegionCommonValueInRange( dr, ( channels[i + j].DrRange.Fields.Min & 0x0F ),
                                                   ( channels[i + j].DrRange.Fields.Max & 0x0F ) ) == 1 )
+#endif
                 {
                     // At least 1 channel has been found we can return OK.
                     return true;
@@ -258,4 +263,31 @@ int8_t RegionCommonComputeTxPower( int8_t txPowerIndex, float maxEirp, float ant
     phyTxPower = ( int8_t )floor( ( maxEirp - ( txPowerIndex * 2U ) ) - antennaGain );
 
     return phyTxPower;
+}
+void RegionCommonRxBeaconSetup( RegionCommonRxBeaconSetupParams_t* rxBeaconSetupParams )
+{
+    bool rxContinuous = true;
+    uint8_t datarate;
+
+    // Set the radio into sleep mode
+    Radio.Sleep( );
+
+    // Setup frequency and payload length
+    Radio.SetChannel( rxBeaconSetupParams->Frequency );
+    Radio.SetMaxPayloadLength( MODEM_LORA, rxBeaconSetupParams->BeaconSize );
+
+    // Check the RX continuous mode
+    if( rxBeaconSetupParams->RxTime != 0 )
+    {
+        rxContinuous = false;
+    }
+
+    // Get region specific datarate
+    datarate = rxBeaconSetupParams->Datarates[rxBeaconSetupParams->BeaconDatarate];
+
+    // Setup radio
+    Radio.SetRxConfig( MODEM_LORA, rxBeaconSetupParams->BeaconChannelBW, datarate,
+                       1, 0, 10, rxBeaconSetupParams->SymbolTimeout, true, rxBeaconSetupParams->BeaconSize, false, 0, 0, false, rxContinuous );
+
+    Radio.Rx( rxBeaconSetupParams->RxTime );
 }

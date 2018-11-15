@@ -80,16 +80,16 @@ void GpioMcuSetInterrupt( Gpio_t *obj, IrqModes irqMode, IrqPriorities irqPriori
     static uint8 g_lora_irq_init = 0;
     RegisterGpioCallback(obj, irqHandler);
     if (g_lora_irq_init == 0) {
-        extern void GpioIsrEntry (void);
-        lora_irq_StartEx(GpioIsrEntry);
+        //extern void GpioIsrEntry (void);
+        //global_irq_StartEx(GpioIsrEntry);
         g_lora_irq_init = 1;
     }
 }
 
 void GpioMcuRemoveInterrupt( Gpio_t *obj )
 {
-    if (obj->pin == DIO1_PIN)
-        lora_irq_Stop();
+    //if (obj->pin == DIO1_PIN)
+    //    global_irq_Stop();
 }
 
 void GpioMcuWrite( Gpio_t *obj, uint32_t value )

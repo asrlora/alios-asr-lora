@@ -31,13 +31,12 @@
 #include "timer.h"
 #include "sx126x-board.h"
 #include "debug.h"
-extern uint32_t sys_timeout;
-extern uint32_t current_times;
 /*!
  * Antenna switch GPIO pins objects
  */
 Gpio_t AntPow;
 Gpio_t DeviceSel;
+LOG_LEVEL g_log_level = LL_DEBUG;
 
 #ifdef CONFIG_LORA_USE_TCXO
 bool UseTCXO = true;
@@ -45,6 +44,8 @@ bool UseTCXO = true;
 bool UseTCXO = false;
 #endif
 uint8_t gPaOptSetting = 0;
+static uint32_t gBaudRate = STDIO_UART_BAUDRATE;
+char gChipId[17];
 
 void SX126xIoInit( void )
 {
@@ -74,11 +75,11 @@ void SX126xReset( void )
 {
     SPI_NRESET_SetDriveMode(SPI_NRESET_DM_STRONG);
     
-    DelayMs( 10 );
-    GpioInit( &SX126x.Reset, RADIO_RESET, PIN_OUTPUT, PIN_PUSH_PULL, PIN_NO_PULL, 0 );
     DelayMs( 20 );
+    GpioInit( &SX126x.Reset, RADIO_RESET, PIN_OUTPUT, PIN_PUSH_PULL, PIN_NO_PULL, 0 );
+    DelayMs( 40 );
     GpioInit( &SX126x.Reset, RADIO_RESET, PIN_ANALOGIC, PIN_PUSH_PULL, PIN_NO_PULL, 1 ); // internal pull-up
-    DelayMs( 10 );
+    DelayMs( 20 );
     
     SPI_NRESET_SetDriveMode(SPI_NRESET_DM_ALG_HIZ);
 }
@@ -238,6 +239,7 @@ void SX126xSetRfTxPower( int8_t power )
 
 uint8_t SX126xGetPaSelect( uint32_t channel )
 {
+    (void)channel;
     return SX1262;
 }
 
@@ -265,6 +267,7 @@ void SX126xAntSwOff( void )
 
 bool SX126xCheckRfFrequency( uint32_t frequency )
 {
+    (void)frequency;
     // Implement check. Currently all frequencies are supported
     return true;
 }
@@ -280,52 +283,36 @@ void BoardEnableIrq( void )
     CyGlobalIntEnable;
 }
 
-void RtcInit( void )
-{
-	RTC_Start();
-    RTC_SetPeriod(200, 40000);
-}
-
-TimerTime_t RtcGetAdjustedTimeoutValue( uint64 timeout )
-{
-    return timeout;
-}
-
-void RtcSetTimeout( uint64 timeout )
-{
-
-    //RTC_DATE_TIME current;
-    //RTC_GetDateAndTime(&current);
-    //current.time += timeout;
-    //RTC_SetAlarmDateAndTime(&current);
-    //RTC_SetAlarmHandler(TimerIrqHandler);
-    BoardDisableIrq();
-    sys_timeout = (uint32_t)timeout;
-    current_times = 0;
-    BoardEnableIrq();
-}
-
-TimerTime_t RtcGetElapsedAlarmTime( void )
-{
-    return(RTC_GetUnixTime());
-}
-
-TimerTime_t RtcGetTimerValue( void )
-{
-    return(RTC_GetUnixTime());
-}
-
-TimerTime_t RtcComputeElapsedTime( TimerTime_t eventInTime )
-{
-    TimerTime_t now = RTC_GetUnixTime();
-    return (now = eventInTime);
-
-}
-
 void DelayMsMcu( uint32_t ms )
 {
-    mdelay(ms);
+    CyDelay(ms);
 }
+
+static char *olds = NULL;
+extern void *rawmemchr (__const void *__s, int __c);
+char * strtok_l (char *s, const char *delim)
+{
+    char *token;
+
+    if (s == NULL) s = olds;
+
+    s += strspn (s, delim);
+    if (*s == '\0') {
+        olds = s;
+        return NULL;
+    }
+
+    token = s;
+    s = strpbrk (token, delim);  
+    if (s == NULL)
+        olds = rawmemchr (token, '\0');
+    else {      
+        *s = '\0';        
+        olds = s + 1;
+    }
+    return token;
+}
+
 
 static const double huge = 1.0e300;
 #define __HI(x) *(1+(int*)&x)
@@ -473,4 +460,61 @@ void BoardInitMcu( void )
 {
     DBG_PRINTF("======init ASR board======\r\n");
     SX126xIoInit();
+}
+
+void DBG_LogLevelSet(int level)
+{
+    g_log_level = level;
+}
+
+int DBG_LogLevelGet()
+{
+    return g_log_level;
+}
+
+char *HW_Get_MFT_ID(void)
+{
+    return CONFIG_MANUFACTURER;
+}
+
+char *HW_Get_MFT_Model(void)
+{
+    return CONFIG_DEVICE_MODEL;   
+}
+
+char *HW_Get_MFT_Rev(void)
+{
+    return CONFIG_VERSION;
+}
+
+char *HW_Get_MFT_SN(void)
+{
+    uint32_t id[2];
+    CyGetUniqueId(id);
+    sprintf(gChipId, "%08X%08X", (unsigned int)id[0], (unsigned int)id[1]);
+    return gChipId;
+}
+
+bool HW_Set_MFT_Baud(uint32_t baud)
+{   
+    uint32_t div = (float)CYDEV_BCLK__HFCLK__HZ/baud/UART_1_UART_OVS_FACTOR + 0.5 - 1;
+    UART_1_SCBCLK_DIV_REG = div<<8;
+    UART_1_SCBCLK_CMD_REG = 0x8000FF41u;
+    
+    gBaudRate = baud;   
+    return true;
+}
+
+uint32_t HW_Get_MFT_Baud(void)
+{
+    return gBaudRate;
+}
+
+void HW_Reset(int mode)
+{
+    if (mode == 0) {
+	    CySoftwareReset();
+    } else if (mode == 1) {
+        Bootloadable_1_Load();
+    } 
 }

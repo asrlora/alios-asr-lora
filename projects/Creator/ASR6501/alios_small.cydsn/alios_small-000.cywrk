@@ -8,6 +8,7 @@
 <files />
 <projects>
 <v>.\alios_small.cyprj</v>
+<v>.\bootloader.cydsn\bootloader.cyprj</v>
 </projects>
 <workspace_id v="477e4a18-955d-4ee8-b819-f2eb89987811" />
 <WriteAppVersionLastSavedWith v="4.2.0.641" />
