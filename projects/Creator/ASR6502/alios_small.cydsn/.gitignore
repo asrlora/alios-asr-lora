@@ -1,0 +1,12 @@
+CortexM0p/
+Generated_Source/
+!bootloader.cydsn/Generated_Source/
+REBUILD.log
+alios_small-000.cywrk.*
+alios_small.cyprj.*
+bootloader.cyprj.*
+alios_small.rpt
+codegentemp/
+Export/PSoCCreatorExportIDE.xml
+alios_small.cyfit
+*.log

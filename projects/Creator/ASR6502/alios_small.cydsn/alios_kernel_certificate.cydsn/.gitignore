@@ -1,0 +1,10 @@
+CortexM0p/
+Generated_Source/
+REBUILD.log
+alios_kernel_certificate-000.cywrk.*
+alios_kernel_certificate.cyprj.*
+alios_kernel_certificate.rpt
+codegentemp/
+Export/PSoCCreatorExportIDE.xml
+alios_kernel_certificate.cyfit
+*.log
