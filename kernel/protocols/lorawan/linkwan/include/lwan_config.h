@@ -14,6 +14,12 @@
 #define LWAN_SUCCESS  0
 #define LWAN_ERROR   -1    
 
+#ifdef CONFIG_LINKWAN
+#define LWAN_PROTL   1 
+#else
+#define LWAN_PROTL   0 
+#endif
+
 #define LWAN_DEV_KEYS_DEFAULT   {LORA_KEYS_MAGIC_NUM, {0}, \
                                  {LORAWAN_DEVICE_EUI, LORAWAN_APPLICATION_EUI, LORAWAN_APPLICATION_KEY}, \
                                  {LORAWAN_DEVICE_ADDRESS, LORAWAN_NWKSKEY, LORAWAN_APPSKEY}, 0}
@@ -24,7 +30,8 @@
 
 #define LWAN_MAC_CONFIG_DEFAULT {{1, 0, 0, 1}, {7, 7}, 10, DR_3, 0, 0, {0, 0, 0}, 0, 0}
     
-      
+#define LWAN_PRODCT_CONFIG_DEFAULT {LWAN_PROTL}
+
 typedef enum JoinMode_s {
     JOIN_MODE_OTAA,
     JOIN_MODE_ABP
@@ -104,6 +111,10 @@ typedef struct sLoraMacConfig {
     uint16_t crc;
 } __attribute__((packed)) LWanMacConfig_t;
 
+typedef struct sLoraProdctConfig {
+    uint8_t protl;
+} __attribute__((packed)) LWanProdctConfig_t;
+
 typedef struct sOTAKeys {
     uint8_t deveui[LORA_EUI_LENGTH];
     uint8_t appeui[LORA_EUI_LENGTH];
@@ -170,6 +181,7 @@ int lwan_dev_keys_set(int type, void *data);
 int lwan_dev_keys_get(int type, void *data);
 
 LWanDevConfig_t *lwan_dev_config_init(LWanDevConfig_t *default_config);
+LWanProdctConfig_t *lwan_prodct_config_init(LWanProdctConfig_t *default_config);
 int lwan_dev_config_get(int type, void *config);
 int lwan_dev_config_set(int type, void *config);
 

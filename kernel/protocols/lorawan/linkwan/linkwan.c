@@ -55,17 +55,28 @@ bool g_lora_debug = false;
 static LWanDevConfig_t *g_lwan_dev_config_p = NULL;
 static LWanMacConfig_t *g_lwan_mac_config_p = NULL;
 static LWanDevKeys_t *g_lwan_dev_keys_p = NULL;
+static LWanProdctConfig_t *g_lwan_prodct_config_p = NULL;
 static void start_dutycycle_timer(void);
+
+#ifdef CONFIG_PROJECT_CAINIAO
+static void notify_host()
+{
+    pin_wakeup_SetDriveMode(pin_wakeup_DM_STRONG);
+    pin_wakeup_Write(1);
+    CyDelay(5);
+    pin_wakeup_Write(0);
+}
+#else
+static void notify_host()
+{
+}  
+#endif    
 
 static bool send_frame(void)
 {
     McpsReq_t mcpsReq;
     LoRaMacTxInfo_t txInfo;
     uint8_t send_msg_type;
-
-    if (tx_data.BuffSize > LINKWAN_APP_DATA_SIZE) {
-        tx_data.BuffSize = LINKWAN_APP_DATA_SIZE;
-    }
 
     if (LoRaMacQueryTxPossible(tx_data.BuffSize, &txInfo) != LORAMAC_STATUS_OK) {
         return true;
@@ -174,18 +185,32 @@ static void on_tx_next_packet_timer_event(void)
 static void mcps_confirm(McpsConfirm_t *mcpsConfirm)
 {
     if (mcpsConfirm->Status == LORAMAC_EVENT_INFO_STATUS_OK) {
-#ifdef CONFIG_LINKWAN_AT        
+#ifdef CONFIG_LINKWAN_AT   
+        notify_host();
         PRINTF_AT("\r\nOK+SENT:%02X\r\n", mcpsConfirm->NbRetries);
 #endif        
     } else {
-#ifdef CONFIG_LINKWAN_AT        
+#ifdef CONFIG_LINKWAN_AT   
+        notify_host();
         PRINTF_AT("\r\nERR+SENT:%02X\r\n", mcpsConfirm->NbRetries);
 #endif  
         if(mcpsConfirm->McpsRequest ==MCPS_CONFIRMED) {
             if(g_lwan_dev_config_p->modes.join_mode == JOIN_MODE_OTAA) {
                 reset_join_state();
 #ifdef CONFIG_LINKWAN            
+                MibRequestConfirm_t mibReq;
+                uint16_t channelsMaskTemp[8] = {0};
+
                 g_lwan_dev_config_p->join_settings.join_method = JOIN_METHOD_DEF;
+                for (uint8_t i = 0; i < 16; i++) {
+                    if ((g_lwan_dev_config_p->freqband_mask & (1 << i)) != 0) {
+                        channelsMaskTemp[i / 2] |= (0xFF << ((i % 2) * 8));
+                    }
+                }
+                channelsMaskTemp[0] |= 0XFF00;
+                mibReq.Type = MIB_CHANNELS_MASK;
+                mibReq.Param.ChannelsMask = channelsMaskTemp;
+                LoRaMacMibSetRequestConfirm(&mibReq);
 #endif    
                 DBG_LINKWAN("Not receive Ack,Start to Join...\r\n");
             }else{
@@ -243,6 +268,7 @@ static void mcps_indication(McpsIndication_t *mcpsIndication)
         confirm = 1;
     uint8_t type = confirm | mcpsIndication->AckReceived<<1 | 
                    mcpsIndication->LinkCheckAnsReceived<<2 | mcpsIndication->DevTimeAnsReceived<<3;
+    notify_host();
     PRINTF_AT("\r\nOK+RECV:%02X,%02X,%02X", type, mcpsIndication->Port, mcpsIndication->BufferSize);
     if(mcpsIndication->BufferSize) {
         PRINTF_AT(",");
@@ -282,7 +308,8 @@ static void mlme_confirm( MlmeConfirm_t *mlmeConfirm )
                 // Status is OK, node has joined the network
                 g_lwan_device_state = DEVICE_STATE_JOINED;
                 lwan_dev_status_set(DEVICE_STATUS_JOIN_PASS);
-#ifdef CONFIG_LINKWAN_AT                  
+#ifdef CONFIG_LINKWAN_AT
+                notify_host();
                 PRINTF_AT("%s:OK\r\n", LORA_AT_CJOIN);
 #endif                
             } else {
@@ -304,7 +331,8 @@ static void mlme_confirm( MlmeConfirm_t *mlmeConfirm )
                     if (g_freqband_num == 0) {
                         g_lwan_dev_config_p->join_settings.join_method = JOIN_METHOD_DEF;
                         rejoin_delay = 60 * 60 * 1000;  // 1 hour
-#ifdef CONFIG_LINKWAN_AT                          
+#ifdef CONFIG_LINKWAN_AT      
+                        notify_host();
                         PRINTF_AT("%s:FAIL\r\n", LORA_AT_CJOIN);
 #endif                        
                         DBG_LINKWAN("Wait 1 hour for new round of scan\r\n");
@@ -326,7 +354,8 @@ static void mlme_confirm( MlmeConfirm_t *mlmeConfirm )
             break;
         }
         case MLME_LINK_CHECK: {
-#ifdef CONFIG_LINKWAN_AT             
+#ifdef CONFIG_LINKWAN_AT
+            notify_host();
             PRINTF_AT("+CLINKCHECK: %d, %d, %d, %d, %d\r\n", mlmeConfirm->Status, mlmeConfirm->DemodMargin, mlmeConfirm->NbGateways, mlmeConfirm->Rssi, mlmeConfirm->Snr);
 #endif            
             if ( mlmeConfirm->Status == LORAMAC_EVENT_INFO_STATUS_OK ) {
@@ -513,9 +542,11 @@ void init_lwan_configs()
     LWanDevKeys_t default_keys = LWAN_DEV_KEYS_DEFAULT;
     LWanDevConfig_t default_dev_config = LWAN_DEV_CONFIG_DEFAULT;
     LWanMacConfig_t default_mac_config = LWAN_MAC_CONFIG_DEFAULT;
+    LWanProdctConfig_t default_prodct_config = LWAN_PRODCT_CONFIG_DEFAULT;
     g_lwan_dev_keys_p = lwan_dev_keys_init(&default_keys);
     g_lwan_dev_config_p = lwan_dev_config_init(&default_dev_config);
     g_lwan_mac_config_p = lwan_mac_config_init(&default_mac_config);
+    g_lwan_prodct_config_p = lwan_prodct_config_init(&default_prodct_config);
 }
 
 
@@ -848,6 +879,15 @@ int lwan_mac_req_send(int type, void *param)
 int lwan_join(uint8_t bJoin, uint8_t bAutoJoin, uint16_t joinInterval, uint16_t joinRetryCnt)
 {
     int ret = LWAN_SUCCESS;
+    JoinSettings_t join_settings;
+    lwan_dev_config_get(DEV_CONFIG_JOIN_SETTINGS, &join_settings);
+    join_settings.auto_join = bAutoJoin;
+    if(joinInterval>=7 && joinInterval<=255)
+        join_settings.join_interval = joinInterval;
+    if(joinRetryCnt>=1 && joinRetryCnt<=255)
+        join_settings.join_trials = joinRetryCnt;
+    lwan_dev_config_set(DEV_CONFIG_JOIN_SETTINGS, &join_settings);
+        
     if(bJoin == 0){//stop join
         TimerStop(&TxNextPacketTimer);
         MibRequestConfirm_t mib_req;
@@ -861,15 +901,6 @@ int lwan_join(uint8_t bJoin, uint8_t bAutoJoin, uint16_t joinInterval, uint16_t 
         g_lwan_device_state = DEVICE_STATE_SLEEP;
         rejoin_flag = bAutoJoin;
     } else if(bJoin == 1){
-        JoinSettings_t join_settings;
-        lwan_dev_config_get(DEV_CONFIG_JOIN_SETTINGS, &join_settings);
-        join_settings.auto_join = bAutoJoin;
-        if(joinInterval>=7 && joinInterval<=255)
-            join_settings.join_interval = joinInterval;
-        if(joinRetryCnt>=1 && joinRetryCnt<=255)
-            join_settings.join_trials = joinRetryCnt;
-        lwan_dev_config_set(DEV_CONFIG_JOIN_SETTINGS, &join_settings);
-        
         MibRequestConfirm_t mib_req;
         mib_req.Type = MIB_NETWORK_JOINED;
         LoRaMacStatus_t status = LoRaMacMibGetRequestConfirm(&mib_req);

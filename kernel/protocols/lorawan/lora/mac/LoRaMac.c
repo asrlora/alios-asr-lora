@@ -1065,7 +1065,16 @@ static void OnRadioRxDone( uint8_t *payload, uint16_t size, int16_t rssi, int8_t
                     curMulticastParams->DownLinkCounter = downLinkCounter;
                 } else {
                     if ( macHdr.Bits.MType == FRAME_TYPE_DATA_CONFIRMED_DOWN ) {
+#ifdef CONFIG_LWAN
+                        if (LoRaMacDeviceClass != CLASS_A && McpsIndication.FramePending){
+                            SrvAckRequested = false;
+                        }
+                        else{
+                            SrvAckRequested = true;
+                        }
+#else
                         SrvAckRequested = true;
+#endif 
                         McpsIndication.McpsIndication = MCPS_CONFIRMED;
 
                         if ( ( DownLinkCounter == downLinkCounter ) &&
@@ -1899,7 +1908,7 @@ static bool ValidatePayloadLength( uint8_t lenN, int8_t datarate, uint8_t fOptsL
     payloadSize = ( lenN + fOptsLen );
 
     // Validation of the application payload size
-    if ( ( payloadSize <= maxN ) && ( payloadSize <= LORAMAC_PHY_MAXPAYLOAD ) ) {
+    if ( ((( payloadSize > maxN ) && (fOptsLen != 0) && (fOptsLen <= maxN)) || ( payloadSize <= maxN )) && ( payloadSize <= LORAMAC_PHY_MAXPAYLOAD ) ) {
         return true;
     }
     return false;
@@ -2573,7 +2582,7 @@ static void CalculateBackOff( uint8_t channel )
     RegionCalcBackOff( LoRaMacRegion, &calcBackOff );
 
     // Update aggregated time-off
-    AggregatedTimeOff = AggregatedTimeOff + ( TxTimeOnAir * AggregatedDCycle - TxTimeOnAir );
+    AggregatedTimeOff = TxTimeOnAir * AggregatedDCycle - TxTimeOnAir;
 }
 
 static void ResetMacParameters( void )
@@ -2762,7 +2771,10 @@ LoRaMacStatus_t PrepareFrame( LoRaMacHeader_t *macHdr, LoRaMacFrameCtrl_t *fCtrl
 
             if ( ( payload != NULL ) && ( LoRaMacTxPayloadLen > 0 ) ) {
                 LoRaMacBuffer[pktHeaderLen++] = framePort;
-
+                if ((pktHeaderLen + LoRaMacTxPayloadLen) > (LORAMAC_PHY_MAXPAYLOAD - 4))  {
+                    LoRaMacTxPayloadLen = LORAMAC_PHY_MAXPAYLOAD - 4 - pktHeaderLen;
+                }
+    
                 if ( framePort == 0 ) {
                     // Reset buffer index as the mac commands are being sent on port 0
                     MacCommandsBufferIndex = 0;

@@ -60,7 +60,7 @@ static void sys_init(void)
 #ifdef AOS_KV
     aos_kv_init();
     uint32_t baudrate;
-    int len;
+    int len = sizeof(baudrate);
     if(aos_kv_get("sys_baud", &baudrate, &len) == 0) {
         HW_Set_MFT_Baud(baudrate);
     }

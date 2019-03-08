@@ -39,7 +39,7 @@ Maintainer: Miguel Luis ( Semtech ), Gregory Cristian ( Semtech ) and Daniel Jae
 #include "commissioning.h"
 
 // Definitions
-#define CHANNELS_MASK_SIZE 1
+#define CHANNELS_MASK_SIZE 8
 #define RADIO_WAKEUP_TIME 2
 #define CHANNELS_MASK_CNTL_RFU 0x0FF
 #define CHANNELS_MASK_ALL_ON   0x0FE
@@ -62,12 +62,12 @@ static Band_t Bands[CN470A_MAX_NB_BANDS] = {
 /*!
  * LoRaMac channels mask
  */
-static uint16_t ChannelsMask[CHANNELS_MASK_SIZE];
+static uint16_t ChannelsMask[CHANNELS_MASK_SIZE] = {0};
 
 /*!
  * LoRaMac channels default mask
  */
-static uint16_t ChannelsDefaultMask[CHANNELS_MASK_SIZE];
+static uint16_t ChannelsDefaultMask[CHANNELS_MASK_SIZE] = {0};
 
 uint8_t NumFreqBand;
 uint8_t FreqBandNum[16] = {0};
@@ -134,7 +134,7 @@ static uint8_t CountNbOfEnabledChannels( bool joined, uint8_t datarate, uint16_t
     uint8_t nbEnabledChannels = 0;
     uint8_t delayTransmission = 0;
 
-    for (uint8_t j = 0; j < 16; j++) {
+    for (uint8_t j = 0; j < 8; j++) {
         if ((channelsMask[0] & (1 << j)) != 0) {
             // Check if the channel is enabled
             if (channels[j].Frequency == 0) {
@@ -328,9 +328,9 @@ void RegionCN470AInitDefaults( InitType_t type )
             Channels[7] = ( ChannelParams_t ) CN470A_LC8;
 
             // Initialize the channels default mask
-            ChannelsDefaultMask[0] = LC( 1 ) + LC( 2 ) + LC( 3 ) + LC( 4 ) + LC( 5 ) + LC( 6 ) + LC( 7 ) + LC( 8 ) ;
+            ChannelsDefaultMask[0] = (LC( 1 ) + LC( 2 ) + LC( 3 ) + LC( 4 ) + LC( 5 ) + LC( 6 ) + LC( 7 ) + LC( 8 )) << 8 ;
             // Update the channels mask
-            RegionCommonChanMaskCopy( ChannelsMask, ChannelsDefaultMask, 1 );
+            RegionCommonChanMaskCopy( ChannelsMask, ChannelsDefaultMask,  CHANNELS_MASK_SIZE);
 
             //set default freqband = 1A2(No.=1,471.9Mhz)
             NumFreqBand = 1;
@@ -430,17 +430,24 @@ bool RegionCN470AChanMaskSet( ChanMaskSetParams_t *chanMaskSet )
     switch ( chanMaskSet->ChannelsMaskType ) {
         case CHANNELS_MASK: {
             //set default freqband = 1A2(No.=1,471.9Mhz)
-            NumFreqBand = 1;
-            FreqBandNum[0] = 1; //1A2
+            if ((chanMaskSet->ChannelsMaskIn[0] & 0xFF00) != 0)
+            {
+                NumFreqBand = 1;
+                FreqBandNum[0] = 1; //1A2
+            }
+            else
+            {
+                NumFreqBand = 0;
+            }
             scan_mask = 0;
             //save other freqband from mask
             for (uint8_t i = 0; i < 16; i++) {
-                if ((*((uint8_t *)chanMaskSet->ChannelsMaskIn +i) == 0xFF) && i != 1) {
+                if ((*((uint8_t *)chanMaskSet->ChannelsMaskIn +i) != 0) && i != 1) {
                     FreqBandNum[NumFreqBand++] = i;
                 }
             }
             NextAvailableFreqBandIdx = 0;
-            ChannelsMask[0] = LC( 1 ) + LC( 2 ) + LC( 3 ) + LC( 4 ) + LC( 5 ) + LC( 6 ) + LC( 7 ) + LC( 8 ) ;
+            RegionCommonChanMaskCopy(ChannelsMask, chanMaskSet->ChannelsMaskIn, CHANNELS_MASK_SIZE );
             break;
         }
         case CHANNELS_DEFAULT_MASK: {
@@ -653,7 +660,6 @@ uint8_t RegionCN470ALinkAdrReq( LinkAdrReqParams_t *linkAdrReq, int8_t *drOut, i
     uint8_t bandNum;
     uint16_t chMaskNew[8] = {0};
     ChanMaskSetParams_t chanMaskSet;
-    uint8_t i;
 
     while ( bytesProcessed < linkAdrReq->PayloadSize ) {
         // Get ADR request parameters
@@ -689,16 +695,8 @@ uint8_t RegionCN470ALinkAdrReq( LinkAdrReqParams_t *linkAdrReq, int8_t *drOut, i
             memset((uint8_t *)chMaskNew, 0xFF, sizeof(chMaskNew));
             chanMaskSet.ChannelsMaskIn = chMaskNew;
         } else {
-            for (i = 0; i < NumFreqBand; i++) {
-                *((uint8_t *)chMaskNew + FreqBandNum[i]) = 0xFF;
-            }
-            for (i = 0; i < 2; i++) {
-                if ((((chMask >> (i * 8)) & 0xFF) == 0x0) && ((bandNum + i) != 1)){
-                    *((uint8_t *)chMaskNew + (bandNum + i)) = 0;
-                } else {
-                    *((uint8_t *)chMaskNew + (bandNum + i)) = 0xFF;
-                }
-            }
+            RegionCommonChanMaskCopy(chMaskNew, ChannelsMask, CHANNELS_MASK_SIZE );
+            chMaskNew[bandNum / 2] = chMask;
             chanMaskSet.ChannelsMaskIn = chMaskNew;
         }
     }
@@ -921,42 +919,11 @@ bool RegionCN470ANextChannel( NextChanParams_t *nextChanParams, uint8_t *channel
     TimerTime_t nextTxDelay = 0;
     MibRequestConfirm_t mib_req;
     static uint8_t RxFreqBandNum = 0;
+    uint16_t channelMsakOfBand = 0;
+    uint8_t index;
 
-    if (RegionCommonCountChannels( ChannelsMask, 0, 1) == 0 ) { // Reactivate default channels
+    if (RegionCommonCountChannels( ChannelsMask, 0, CHANNELS_MASK_SIZE) == 0 ) { // Reactivate default channels
         ChannelsMask[0] |= LC( 1 ) + LC( 2 ) + LC( 3 );
-    }
-
-    if (nextChanParams->AggrTimeOff <= TimerGetElapsedTime( nextChanParams->LastAggrTx)) {
-        // Reset Aggregated time off
-        *aggregatedTimeOff = 0;
-
-        // Update bands Time OFF
-        nextTxDelay = RegionCommonUpdateBandTimeOff(nextChanParams->Joined, nextChanParams->DutyCycleEnabled, Bands,
-                                                    CN470A_MAX_NB_BANDS);
-
-        // Search how many channels are enabled
-        nbEnabledChannels = CountNbOfEnabledChannels( nextChanParams->Joined, nextChanParams->Datarate,
-                                                      ChannelsMask, Channels,
-                                                      Bands, enabledChannels, &delayTx );
-    } else {
-        delayTx++;
-        nextTxDelay = nextChanParams->AggrTimeOff - TimerGetElapsedTime( nextChanParams->LastAggrTx );
-    }
-
-    if ( nbEnabledChannels > 0 ) {
-        // We found a valid channel
-        *channel = enabledChannels[randr( 0, nbEnabledChannels - 1 )];
-        *time = 0;
-    } else {
-        if ( delayTx > 0 ) {
-            // Delay transmission due to AggregatedTimeOff or to a band time off
-            *time = nextTxDelay;
-            return true;
-        }
-        // Datarate not supported by any channel, restore defaults
-        ChannelsMask[0] |= LC( 1 ) + LC( 2 ) + LC( 3 );
-        *time = 0;
-        return false;
     }
 
     mib_req.Type = MIB_NETWORK_JOINED;
@@ -979,6 +946,59 @@ bool RegionCN470ANextChannel( NextChanParams_t *nextChanParams, uint8_t *channel
         }
     } else {
         TxFreqBandNum = nextChanParams->freqband;
+        for (index = 0; index < NumFreqBand; index++) {
+            if (TxFreqBandNum == FreqBandNum[index])
+            {
+                break;
+            }
+        }
+        if (NumFreqBand == index)
+        {
+            if (NumFreqBand == 0)
+            {
+                ChannelsMask[0] |= LC( 1 ) + LC( 2 ) + LC( 3 );
+                *time = 0;
+                return false; 
+            }
+            else
+            {
+                TxFreqBandNum = FreqBandNum[NumFreqBand - 1];
+            }
+        }
+    }
+
+    if (nextChanParams->AggrTimeOff <= TimerGetElapsedTime( nextChanParams->LastAggrTx)) {
+        // Reset Aggregated time off
+        *aggregatedTimeOff = 0;
+
+        // Update bands Time OFF
+        nextTxDelay = RegionCommonUpdateBandTimeOff(nextChanParams->Joined, nextChanParams->DutyCycleEnabled, Bands,
+                                                    CN470A_MAX_NB_BANDS);
+
+        channelMsakOfBand = ChannelsMask[TxFreqBandNum / 2] >> ((TxFreqBandNum % 2) * 8);
+        // Search how many channels are enabled
+        nbEnabledChannels = CountNbOfEnabledChannels( nextChanParams->Joined, nextChanParams->Datarate,
+                                                      &channelMsakOfBand, Channels,
+                                                      Bands, enabledChannels, &delayTx );
+    } else {
+        delayTx++;
+        nextTxDelay = nextChanParams->AggrTimeOff - TimerGetElapsedTime( nextChanParams->LastAggrTx );
+    }
+
+    if ( nbEnabledChannels > 0 ) {
+        // We found a valid channel
+        *channel = enabledChannels[randr( 0, nbEnabledChannels - 1 )];
+        *time = 0;
+    } else {
+        if ( delayTx > 0 ) {
+            // Delay transmission due to AggregatedTimeOff or to a band time off
+            *time = nextTxDelay;
+            return true;
+        }
+        // Datarate not supported by any channel, restore defaults
+        ChannelsMask[0] |= LC( 1 ) + LC( 2 ) + LC( 3 );
+        *time = 0;
+        return false;
     }
 
     uint8_t uldl_mode;
@@ -1069,24 +1089,26 @@ LoRaMacStatus_t RegionCN470AChannelAdd( ChannelAddParams_t *channelAdd )
 
     memcpy( &(Channels[id]), channelAdd->NewChannel, sizeof( Channels[id] ) );
     Channels[id].Band = band;
-    ChannelsMask[0] |= ( 1 << id );
+    *((uint8_t *)ChannelsMask + TxFreqBandNum) |= ( 1 << id );
     return LORAMAC_STATUS_OK;
 }
 
 bool RegionCN470AChannelsRemove( ChannelRemoveParams_t *channelRemove  )
 {
     uint8_t id = channelRemove->ChannelId;
+    uint16_t channelMaskOfBand = 0;
 
     if ( id > CN470A_NUMB_DEFAULT_CHANNELS ) {
         return false;
     }
+    channelMaskOfBand |= *((uint8_t *)ChannelsMask + TxFreqBandNum);
 
     // Remove the channel from the list of channels
     Channels[id] = ( ChannelParams_t ) {
         0, 0, { 0 }, 0
     };
 
-    return RegionCommonChanDisable( ChannelsMask, id, CN470A_MAX_NB_CHANNELS );
+    return RegionCommonChanDisable( &channelMaskOfBand, id, CN470A_MAX_NB_CHANNELS );
 }
 
 void RegionCN470ASetContinuousWave( ContinuousWaveParams_t *continuousWave )

@@ -50,8 +50,7 @@ static LoRaMainCallback_t LoRaMainCallbacks = {
 static void lora_task_entry(void *arg)
 {
     BoardInitMcu();
-    lora_init(&LoRaMainCallbacks);
-    linkwan_at_custom_handler_set(loratest_at_process);   
+    lora_init(&LoRaMainCallbacks);  
     lora_fsm( );
 }
 

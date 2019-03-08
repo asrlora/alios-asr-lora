@@ -31,8 +31,12 @@
 #define LORA_AT_CBL "+CBL"  // battery level
 #define LORA_AT_CSTATUS "+CSTATUS"  // cstatus
 #define LORA_AT_CJOIN "+CJOIN"  // OTTA join
-
+    
+#ifdef  CONFIG_PROJECT_CAINIAO
+#define LORA_AT_DTRX "+DTX"  // tx
+#else
 #define LORA_AT_DTRX "+DTRX"  // tx
+#endif        
 #define LORA_AT_DRX "+DRX"  // rx
 
 #define LORA_AT_CCONFIRM "+CCONFIRM"  //cfm or uncfm
@@ -66,12 +70,17 @@
 #define LORA_AT_IREBOOT "+IREBOOT"
 #define LORA_AT_IDEFAULT "+IDEFAULT"
 
-typedef bool (*linkwan_at_custom_handler_t) (uint8_t *buf, uint32_t size);    
+#define LORA_AT_CSLEEP   "+CSLEEP"
+#define LORA_AT_CMCU    "+CMCU"
+#define LORA_AT_CRX     "+CRX"
+#define LORA_AT_CRXS     "+CRXS"
+#define LORA_AT_CTX     "+CTX"
+#define LORA_AT_CTXCW   "+CTXCW"
+#define LORA_AT_CSTDBY  "+CSTDBY"
 
 void linkwan_at_init(void);
 void linkwan_at_process(void);
 void linkwan_serial_input(uint8_t cmd);
 int linkwan_serial_output(uint8_t *buffer, int len);
-void linkwan_at_custom_handler_set(linkwan_at_custom_handler_t handler);
 void linkwan_at_prompt_print();
 #endif

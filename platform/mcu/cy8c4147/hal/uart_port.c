@@ -15,6 +15,8 @@ static aos_queue_t rx_queue;
 static char rxQueueBuf[UART_RX_QUEUE_SIZE];
 
 extern uint32_t HW_Get_MFT_Baud(void);
+
+#define UART_1_UART_BITS_TO_WAIT    (2u)
 int default_UART_Init(void)
 {
     uart_0.port                = STDIO_UART;
@@ -218,6 +220,39 @@ int32_t aos_uart_send(void *data, uint32_t size, uint32_t timeout)
 {
     return hal_uart_send(&uart_0,data,size,timeout);
 }
+
+uint8 uart_pre_deepsleep(void)
+{
+    uint32_t div = (UART_1_SCBCLK_DIV_REG >> 8) + 1;
+    uint32_t bitTime = div*UART_1_UART_OVS_FACTOR/(CYDEV_BCLK__HFCLK__HZ/1000000) + 1;
+    uint8 bitsToWait = UART_1_UART_BITS_TO_WAIT;
+    uint8 enterDeepSleep = 1u;
+
+    UART_1_skipStart = bitTime<25?0:1;
+    
+    while (0 != (UART_1_SpiUartGetTxBufferSize() + UART_1_GET_TX_FIFO_SR_VALID)) {
+        ;
+    }
+    if (0 == UART_1_SpiUartGetRxBufferSize()) {
+        UART_1_Sleep();        
+        while (0 != bitsToWait) {
+            CyDelayUs(bitTime);
+            --bitsToWait;
+            if (0 != UART_1_GET_RX_FIFO_SR_VALID) {
+                enterDeepSleep = 0;
+                break;
+            }
+        }        
+        if (0 != enterDeepSleep) {
+            return 1;
+        } else {
+            return 0;
+        }
+    }
+
+    return 0;
+}
+
 #ifndef CERTIFICATION
 void log_cli_init(void)
 {
