@@ -807,7 +807,7 @@ static void OnRadioRxDone( uint8_t *payload, uint16_t size, int16_t rssi, int8_t
     uint16_t sequenceCounter = 0;
     uint16_t sequenceCounterPrev = 0;
     uint16_t sequenceCounterDiff = 0;
-    uint16_t downLinkCounter = 0;
+    uint32_t downLinkCounter = 0;
 
     MulticastParams_t *curMulticastParams = NULL;
     uint8_t *nwkSKey = LoRaMacNwkSKey;
@@ -1014,7 +1014,7 @@ static void OnRadioRxDone( uint8_t *payload, uint16_t size, int16_t rssi, int8_t
                 }
             } else {
                 // check for sequence roll-over
-                uint16_t  downLinkCounterTmp = downLinkCounter + 0x10000 + ( int16_t )sequenceCounterDiff;
+                uint32_t  downLinkCounterTmp = downLinkCounter + 0x10000 + ( int16_t )sequenceCounterDiff;
                 LoRaMacComputeMic( payload, size - LORAMAC_MFR_LEN, nwkSKey, address, DOWN_LINK, downLinkCounterTmp, &mic );
                 if ( micRx == mic ) {
                     isMicOk = true;
