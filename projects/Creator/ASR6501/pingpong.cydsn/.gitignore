@@ -1,0 +1,12 @@
+CortexM0p/
+Generated_Source/
+!bootloader.cydsn/Generated_Source/
+REBUILD.log
+pingpong-000.cywrk.*
+pingpong.cyprj.*
+bootloader.cyprj.*
+pingpong.rpt
+codegentemp/
+Export/PSoCCreatorExportIDE.xml
+pingpong.cyfit
+*.log
