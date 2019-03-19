@@ -1733,16 +1733,20 @@ static int at_ctx_func(int opt, int argc, char *argv[])
     switch(opt) {
         case DESC_CMD: {
             ret = LWAN_SUCCESS;
-            snprintf((char *)atcmd, ATCMD_SIZE, "\r\n%s:\"Frequency\",\"DataRate\",\"TxPower\"\r\nOK\r\n", LORA_AT_CTX);
+            snprintf((char *)atcmd, ATCMD_SIZE, "\r\n%s:\"Frequency\",\"DataRate\",\"TxPower\",\"TxLen\"\r\nOK\r\n", LORA_AT_CTX);
             break;
         }
         case SET_CMD: {
             if(argc < 3) break;
 
+            uint8_t len = 0;
             uint32_t freq = strtol(argv[0], NULL, 0);
             uint8_t dr = strtol(argv[1], NULL, 0);  
             uint8_t pwr = strtol(argv[2], NULL, 0);
-            if(LoRaTestTx(freq, dr, pwr)) {
+            if(argc>3)
+                len = strtol(argv[3], NULL, 0);
+                
+            if(LoRaTestTx(freq, dr, pwr, len)) {
                 ret = LWAN_SUCCESS;
                 snprintf((char *)atcmd, ATCMD_SIZE, "\r\n%s\r\nOK\r\n", LORA_AT_CTX);
             }

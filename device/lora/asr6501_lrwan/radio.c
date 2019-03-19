@@ -1126,7 +1126,7 @@ void RadioOnDioIrq( void )
 {
     IrqFired = true;
     dio1_ClearInterrupt();
-    RadioIrqProcess();
+    //RadioIrqProcess();
 }
 
 void RadioIrqProcess( void )

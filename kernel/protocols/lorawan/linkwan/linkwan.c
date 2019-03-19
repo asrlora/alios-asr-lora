@@ -570,6 +570,10 @@ void lora_fsm( void )
 #ifdef CONFIG_LINKWAN_AT
         linkwan_at_process();
 #endif
+        if (Radio.IrqProcess != NULL) {
+            Radio.IrqProcess();
+        }
+        
         switch (g_lwan_device_state) {
             case DEVICE_STATE_INIT: { 
                 LoRaMacPrimitives.MacMcpsConfirm = mcps_confirm;

@@ -17,7 +17,7 @@
 bool LoRaTestSleep(uint8_t sleep_mode);
 bool LoRaTestMcu(uint8_t mcu_mode);
 bool LoRaTestRx(uint32_t freq, uint8_t dr);
-bool LoRaTestTx(uint32_t freq, uint8_t dr, uint8_t pwr);
+bool LoRaTestTx(uint32_t freq, uint8_t dr, uint8_t pwr, uint8_t len);
 bool LoRaTestRxs(uint32_t freq, uint8_t dr, uint8_t cr, uint8_t ldo);
 bool LoRaTestTxcw(uint32_t freq, uint8_t pwr, uint8_t opt);
 bool LoRaTestStdby(uint8_t stdby);
