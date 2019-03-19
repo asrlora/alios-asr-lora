@@ -1,0 +1,12 @@
+CortexM0p/
+Generated_Source/
+!bootloader.cydsn/Generated_Source/
+REBUILD.log
+lorawan-000.cywrk.*
+lorawan.cyprj.*
+bootloader.cyprj.*
+lorawan.rpt
+codegentemp/
+Export/PSoCCreatorExportIDE.xml
+lorawan.cyfit
+*.log

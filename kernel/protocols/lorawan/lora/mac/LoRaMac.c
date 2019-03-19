@@ -2152,7 +2152,7 @@ static void ProcessMacCommands( uint8_t *payload, uint8_t macIndex, uint8_t comm
 #ifdef CONFIG_LWAN                    
                     McpsIndication.LinkCheckAnsReceived = true;
 #endif    
-                	DBG_LINKWAN("margin %d, gateways %d\r\n", MlmeConfirm.DemodMargin, MlmeConfirm.NbGateways);
+                	DBG_PRINTF("margin %d, gateways %d\r\n", MlmeConfirm.DemodMargin, MlmeConfirm.NbGateways);
                 }
                 break;
             case SRV_MAC_LINK_ADR_REQ: {
