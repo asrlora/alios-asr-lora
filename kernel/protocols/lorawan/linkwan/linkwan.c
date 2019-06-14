@@ -97,13 +97,13 @@ static bool send_frame(void)
         LoRaMacMibSetRequestConfirm(&mibReq);
     
         mcpsReq.Type = MCPS_UNCONFIRMED;
-        mcpsReq.Req.Unconfirmed.fPort = tx_data.Port;
+        mcpsReq.Req.Unconfirmed.fPort = g_lwan_mac_config_p->port;
         mcpsReq.Req.Unconfirmed.fBuffer = tx_data.Buff;
         mcpsReq.Req.Unconfirmed.fBufferSize = tx_data.BuffSize;
         mcpsReq.Req.Unconfirmed.Datarate = g_lwan_mac_config_p->datarate;
     } else {
         mcpsReq.Type = MCPS_CONFIRMED;
-        mcpsReq.Req.Confirmed.fPort = tx_data.Port;
+        mcpsReq.Req.Confirmed.fPort = g_lwan_mac_config_p->port;
         mcpsReq.Req.Confirmed.fBuffer = tx_data.Buff;
         mcpsReq.Req.Confirmed.fBufferSize = tx_data.BuffSize;
         mcpsReq.Req.Confirmed.NbTrials = g_data_send_nbtrials?g_data_send_nbtrials:
@@ -194,6 +194,8 @@ static void mcps_confirm(McpsConfirm_t *mcpsConfirm)
         notify_host();
         PRINTF_AT("\r\nERR+SENT:%02X\r\n", mcpsConfirm->NbRetries);
 #endif  
+
+#if 0
         if(mcpsConfirm->McpsRequest ==MCPS_CONFIRMED) {
             if(g_lwan_dev_config_p->modes.join_mode == JOIN_MODE_OTAA) {
                 reset_join_state();
@@ -222,6 +224,7 @@ static void mcps_confirm(McpsConfirm_t *mcpsConfirm)
 #endif  
             }
         }
+#endif         
     }
     next_tx = true;
 }

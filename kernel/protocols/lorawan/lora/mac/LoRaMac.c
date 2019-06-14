@@ -738,7 +738,7 @@ static void OnRadioTxDone( void )
     }
 
     // Verify if the last uplink was a join request
-    if ( ( LoRaMacFlags.Bits.MlmeReq == 1 ) && ( MlmeConfirm.MlmeRequest == MLME_JOIN ) ) {
+    if ( ( LoRaMacFlags.Bits.MlmeReq == 1 ) && ( LoRaMacConfirmQueueIsCmdActive( MLME_JOIN ) == true ) ) {
         LastTxIsJoinRequest = true;
     } else {
         LastTxIsJoinRequest = false;
@@ -1122,7 +1122,25 @@ static void OnRadioRxDone( uint8_t *payload, uint16_t size, int16_t rssi, int8_t
                 if ( ( ( size - 4 ) - appPayloadStartIndex ) > 0 ) {
                     port = payload[appPayloadStartIndex++];
                     frameLen = ( size - 4 ) - appPayloadStartIndex;
-
+                    
+#if defined(CONFIG_LINKWAN) && defined(CONFIG_LORA_VERIFY) 
+                    //Add for linkwan verify test
+                    if(!frameLen) {
+                        LoRaMacFlags.Bits.McpsIndSkip = 1;
+                        // This is not a valid frame. Drop it and reset the ACK bits
+                        McpsConfirm.AckReceived = false;
+                        McpsIndication.AckReceived = false;
+                        SrvAckRequested = false;
+                        
+                        SetMlmeScheduleUplinkIndication( );
+                        
+                        #ifdef CONFIG_LORA_VERIFY
+                        if (g_lora_debug)
+                            PRINTF_RAW("Invalid frame with only frame port\r\n");
+                        #endif
+                    }
+#endif                    
+                    
                     McpsIndication.Port = port;
 
                     if ( port == 0 ) {
@@ -1473,7 +1491,7 @@ static void OnMacStateCheckTimerEvent( void )
 
         if ( ( NodeAckRequested == false ) && ( noTx == false ) ) {
             if ( ( LoRaMacFlags.Bits.MlmeReq == 1 ) || ( ( LoRaMacFlags.Bits.McpsReq == 1 ) ) ) {
-                if ( ( LoRaMacFlags.Bits.MlmeReq == 1 ) && ( MlmeConfirm.MlmeRequest == MLME_JOIN ) ) {
+                if ( ( LoRaMacFlags.Bits.MlmeReq == 1 ) && ( LoRaMacConfirmQueueIsCmdActive( MLME_JOIN ) == true ) ) {
                     // Procedure for the join request
                     MlmeConfirm.NbRetries = JoinRequestTrials;
 
@@ -1687,7 +1705,7 @@ static void OnTxDelayedTimerEvent( void )
     TimerStop( &TxDelayedTimer );
     LoRaMacState &= ~LORAMAC_TX_DELAYED;
 
-    if ( ( LoRaMacFlags.Bits.MlmeReq == 1 ) && ( MlmeConfirm.MlmeRequest == MLME_JOIN ) ) {
+    if ( ( LoRaMacFlags.Bits.MlmeReq == 1 ) && ( LoRaMacConfirmQueueIsCmdActive( MLME_JOIN ) == true ) ) {
         ResetMacParameters( );
 
         altDr.NbTrials = JoinRequestTrials + 1;
