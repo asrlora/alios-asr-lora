@@ -904,7 +904,7 @@ static uint8_t find_next_available_freqband_index()
 
     freqband_index = randr(1, NumFreqBand-1);
     while ((scan_mask & (1 << freqband_index)) == 0) {
-        freqband_index = ((freqband_index + 1) % (NumFreqBand - 1));
+        freqband_index = ((freqband_index + 1) % NumFreqBand);
     }
     scan_mask &= (~(1 << freqband_index));
     return freqband_index;

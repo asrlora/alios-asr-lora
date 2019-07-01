@@ -938,7 +938,11 @@ static int at_cdatarate_func(int opt, int argc, char *argv[])
             break;
         }
         case SET_CMD: {
+            uint8_t adr = 0;
             if(argc < 1) break;
+            
+            lwan_mac_config_get(MAC_CONFIG_ADR_ENABLE, &adr);
+            if(adr) break;
             
             datarate = strtol((const char *)argv[0], NULL, 0);
             if (lwan_mac_config_set(MAC_CONFIG_DATARATE, (void *)&datarate) == LWAN_SUCCESS) {
@@ -1037,7 +1041,7 @@ static int at_crm_func(int opt, int argc, char *argv[])
 {
     int ret = LWAN_ERROR;
     uint8_t reportMode;
-    uint16_t reportInterval;
+    uint32_t reportInterval;
         
     switch(opt) {
         case QUERY_CMD: {
@@ -1542,6 +1546,9 @@ static int at_iloglvl_func(int opt, int argc, char *argv[])
             ret = LWAN_SUCCESS;
             int8_t ll = strtol((const char *)argv[0], NULL, 0);
             DBG_LogLevelSet(ll);
+#ifdef AOS_KV
+            aos_kv_set("sys_loglvl", &ll, sizeof(ll), true);
+#endif             
             snprintf((char *)atcmd, ATCMD_SIZE, "\r\nOK\r\n");
             break;
         }

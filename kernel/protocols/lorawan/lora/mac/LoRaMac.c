@@ -2192,16 +2192,23 @@ static void ProcessMacCommands( uint8_t *payload, uint8_t macIndex, uint8_t comm
                 // Process the ADR requests
                 status = RegionLinkAdrReq( LoRaMacRegion, &linkAdrReq, &linkAdrDatarate,
                                            &linkAdrTxPower, &linkAdrNbRep, &linkAdrNbBytesParsed );
-                if ( ( status & 0x07 ) == 0x07 ) {
-                    LoRaMacParams.ChannelsDatarate = linkAdrDatarate;
-                    LoRaMacParams.ChannelsTxPower = linkAdrTxPower;
-                    
+                if ( ( status & 0x07 ) == 0x07 ) {            
 #ifdef CONFIG_LWAN
                     if ( LoRaMacParams.ChannelsNbRep != linkAdrNbRep ) {
                         lwan_mac_config_set(MAC_CONFIG_UNCONF_NBTRIALS, (void *)&linkAdrNbRep);
                     }
+                    
+                    if ( LoRaMacParams.ChannelsDatarate != linkAdrDatarate ) {
+                        lwan_mac_config_set(MAC_CONFIG_DATARATE, (void *)&linkAdrDatarate);
+                    }
+                    
+                    if ( LoRaMacParams.ChannelsTxPower != linkAdrTxPower ) {
+                        lwan_mac_config_set(MAC_CONFIG_TX_POWER, (void *)&linkAdrTxPower);
+                    }
 #endif
                     LoRaMacParams.ChannelsNbRep = linkAdrNbRep;
+                    LoRaMacParams.ChannelsDatarate = linkAdrDatarate;
+                    LoRaMacParams.ChannelsTxPower = linkAdrTxPower;
                 }
 
                 // Add the answers to the buffer

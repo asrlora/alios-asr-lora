@@ -107,7 +107,7 @@ typedef struct sLoraMacConfig {
     uint8_t tx_power;
     uint8_t rx1_delay;
     RxParams_t rx_params;
-    uint16_t report_interval;
+    uint32_t report_interval;
     uint16_t crc;
 } __attribute__((packed)) LWanMacConfig_t;
 

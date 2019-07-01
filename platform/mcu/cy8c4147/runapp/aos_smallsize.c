@@ -64,6 +64,12 @@ static void sys_init(void)
     if(aos_kv_get("sys_baud", &baudrate, &len) == 0) {
         HW_Set_MFT_Baud(baudrate);
     }
+    
+    int8_t ll;
+    len = sizeof(ll);
+    if(aos_kv_get("sys_loglvl", &ll, &len) == 0) {
+        g_log_level = ll;
+    }
 #endif
 
     default_UART_Init();

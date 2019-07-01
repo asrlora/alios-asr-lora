@@ -617,6 +617,7 @@ void lora_fsm( void )
                 TimerInit( &TxNextPacketTimer, on_tx_next_packet_timer_event );
 
                 lwan_dev_params_update();
+                lwan_mac_params_update();
                 
                 if(g_lwan_dev_config_p->modes.join_mode == JOIN_MODE_ABP){
                     MibRequestConfirm_t mibReq;

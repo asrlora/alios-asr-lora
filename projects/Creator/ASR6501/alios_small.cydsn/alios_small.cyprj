@@ -2141,7 +2141,7 @@
 <name_val_pair name="c9323d49-d323-40b8-9b59-cc008d68a989@Debug@CortexM0p@C/C++@General@Create Listing File" v="True" />
 <name_val_pair name="c9323d49-d323-40b8-9b59-cc008d68a989@Debug@CortexM0p@C/C++@General@Default Char Unsigned" v="False" />
 <name_val_pair name="c9323d49-d323-40b8-9b59-cc008d68a989@Debug@CortexM0p@C/C++@General@Generate Debugging Information" v="True" />
-<name_val_pair name="c9323d49-d323-40b8-9b59-cc008d68a989@Debug@CortexM0p@C/C++@General@Preprocessor Definitions" v="CY_CORE_ID=0; CONFIG_NO_TCPIP; SYSINFO_KERNEL_VERSION=&quot;AOS-R-1.3.0&quot;; HAVE_NOT_ADVANCED_FORMATE; SYSINFO_DEVICE_NAME=&quot;ASR6501&quot;; CONFIG_AOS_KV_MULTIPTN_MODE; CONFIG_AOS_KV_PTN=6; CONFIG_AOS_KV_SECOND_PTN=7; CONFIG_AOS_KV_PTN_SIZE=4096; CONFIG_AOS_KV_BUFFER_SIZE=8192; CONFIG_AOS_CLI; VCALL_RHINO; CONFIG_LINKLORA; REGION_CN470A; CONFIG_LINKWAN; CONFIG_DEBUG_LINKWAN; CONFIG_ASR6501; AOS_KV; CONFIG_LINKWAN_AT; CONFIG_LORA_VERIFY; CONFIG_LORA_USE_TCXO; LOW_POWER_DISABLE; CONFIG_LWAN; CONFIG_MANUFACTURER=&quot;ASR&quot;; CONFIG_DEVICE_MODEL=&quot;6501&quot;; CONFIG_VERSION=&quot;v4.2&quot;" />
+<name_val_pair name="c9323d49-d323-40b8-9b59-cc008d68a989@Debug@CortexM0p@C/C++@General@Preprocessor Definitions" v="CY_CORE_ID=0; CONFIG_NO_TCPIP; SYSINFO_KERNEL_VERSION=&quot;AOS-R-1.3.0&quot;; HAVE_NOT_ADVANCED_FORMATE; SYSINFO_DEVICE_NAME=&quot;ASR6501&quot;; CONFIG_AOS_KV_MULTIPTN_MODE; CONFIG_AOS_KV_PTN=6; CONFIG_AOS_KV_SECOND_PTN=7; CONFIG_AOS_KV_PTN_SIZE=4096; CONFIG_AOS_KV_BUFFER_SIZE=8192; CONFIG_AOS_CLI; VCALL_RHINO; CONFIG_LINKLORA; REGION_CN470A; CONFIG_LINKWAN; CONFIG_DEBUG_LINKWAN; CONFIG_ASR6501; AOS_KV; CONFIG_LINKWAN_AT; CONFIG_LORA_VERIFY; CONFIG_LORA_USE_TCXO; LOW_POWER_DISABLE; CONFIG_LWAN; CONFIG_MANUFACTURER=&quot;ASR&quot;; CONFIG_DEVICE_MODEL=&quot;6501&quot;; CONFIG_VERSION=&quot;v4.3&quot;" />
 <name_val_pair name="c9323d49-d323-40b8-9b59-cc008d68a989@Debug@CortexM0p@C/C++@General@Pedantic Compilation" v="False" />
 <name_val_pair name="c9323d49-d323-40b8-9b59-cc008d68a989@Debug@CortexM0p@C/C++@General@Warning Level" v="High" />
 <name_val_pair name="c9323d49-d323-40b8-9b59-cc008d68a989@Debug@CortexM0p@C/C++@General@Warnings as Errors" v="False" />
@@ -2409,6 +2409,6 @@
 <ignored_deps />
 </CyGuid_495451fe-d201-4d01-b22d-5d3f5609ac37>
 <boot_component v="" />
-<current_generation v="124" />
+<current_generation v="126" />
 </CyGuid_fec8f9e8-2365-4bdb-96d3-a4380222e01b>
 </CyXmlSerializer>
