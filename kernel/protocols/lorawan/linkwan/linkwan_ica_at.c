@@ -424,7 +424,7 @@ static int at_cappskey_func(int opt, int argc, char *argv[])
             if (length == LORA_KEY_LENGTH) {
                 if(lwan_dev_keys_set(DEV_KEYS_ABP_APPSKEY, buf) == LWAN_SUCCESS) {
                     snprintf((char *)atcmd, ATCMD_SIZE, "\r\nOK\r\n");
-                    ret = true;
+                    ret = LWAN_SUCCESS;
                 }
             }
             break;
@@ -464,7 +464,7 @@ static int at_cnwkskey_func(int opt, int argc, char *argv[])
             if (length == LORA_KEY_LENGTH) {
                 if(lwan_dev_keys_set(DEV_KEYS_ABP_NWKSKEY, buf) == LWAN_SUCCESS) {
                     snprintf((char *)atcmd, ATCMD_SIZE, "\r\nOK\r\n");
-                    ret = true;
+                    ret = LWAN_SUCCESS;
                 }
             }
             break;
@@ -527,12 +527,10 @@ static int at_cdelmulticast_func(int opt, int argc, char *argv[])
         case SET_CMD: {
             if(argc < 1) break;
             uint32_t devAddr = (uint32_t)strtol((const char *)argv[0], NULL, 16);
-            ret = lwan_multicast_del(devAddr);
-            if (ret == true) {
+            if (lwan_multicast_del(devAddr) == true) {
                 snprintf((char *)atcmd, ATCMD_SIZE, "\r\nOK\r\n");
-            } else {
-                ret = false;
-	        }
+                ret = LWAN_SUCCESS;
+            }
             break;
         }
         default: break;
@@ -716,7 +714,7 @@ static int at_cclass_func(int opt, int argc, char *argv[])
                     classb_param.beacon_freq = param1;
                     classb_param.beacon_dr = param2;
                     classb_param.pslot_freq = param3;
-                    classb_param.beacon_dr = param4;
+                    classb_param.pslot_dr = param4;
                 }
                 if (lwan_dev_config_set(DEV_CONFIG_CLASSB_PARAM, (void *)&classb_param) == LWAN_SUCCESS) {
                     ret = LWAN_SUCCESS;
@@ -1504,19 +1502,18 @@ static int at_cgbr_func(int opt, int argc, char *argv[])
         }
         case SET_CMD: {
             if(argc < 1) break;
+
+            baud = strtol((const char *)argv[0], NULL, 0);   
+            if(baud<=0 || baud>921600) break;
             
             ret = LWAN_SUCCESS;
-            baud = strtol((const char *)argv[0], NULL, 0);   
-            
             snprintf((char *)atcmd, ATCMD_SIZE, "\r\nOK\r\n");
             linkwan_serial_output(atcmd, strlen((const char *)atcmd));
-            atcmd_index = 0;
-            memset(atcmd, 0xff, ATCMD_SIZE);
             aos_mft_itf.set_mft_baud(baud);
 #ifdef AOS_KV
             aos_kv_set("sys_baud", &baud, sizeof(baud), true);
 #endif             
-            break;
+            return 1;
         }
         default: break;
     }
@@ -1853,8 +1850,9 @@ void linkwan_at_process(void)
 at_end:
 	if (LWAN_ERROR == ret)
         snprintf((char *)atcmd, ATCMD_SIZE, "\r\n%s%x\r\n", AT_ERROR, 1);
-    
-    linkwan_serial_output(atcmd, strlen((const char *)atcmd));        
+    if( ret<=0 )
+        linkwan_serial_output(atcmd, strlen((const char *)atcmd));  
+        
     atcmd_index = 0;
     memset(atcmd, 0xff, ATCMD_SIZE);
     g_atcmd_processing = false;        

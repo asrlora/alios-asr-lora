@@ -675,7 +675,7 @@ void RadioSetRxConfig( RadioModems_t modem, uint32_t bandwidth,
             SX126x.ModulationParams.Params.LoRa.CodingRate = ( RadioLoRaCodingRates_t )coderate;
 
             if( ( ( bandwidth == 0 ) && ( ( datarate == 11 ) || ( datarate == 12 ) ) ) ||
-            ( ( bandwidth == 1 ) && ( datarate == 12 ) ) || (RadioSymbTime(Bandwidths[bandwidth], coderate) >= 16.38) )
+            ( ( bandwidth == 1 ) && ( datarate == 12 ) ) || (RadioSymbTime(Bandwidths[bandwidth], datarate) >= 16.38) )
             {
                 SX126x.ModulationParams.Params.LoRa.LowDatarateOptimize = 0x01;
             }
@@ -712,6 +712,19 @@ void RadioSetRxConfig( RadioModems_t modem, uint32_t bandwidth,
             RadioSetModem( ( SX126x.ModulationParams.PacketType == PACKET_TYPE_GFSK ) ? MODEM_FSK : MODEM_LORA );
             SX126xSetModulationParams( &SX126x.ModulationParams );
             SX126xSetPacketParams( &SX126x.PacketParams );
+
+            // WORKAROUND - Optimizing the Inverted IQ Operation, see DS_SX1261-2_V1.2 datasheet chapter 15.4
+            if( SX126x.PacketParams.Params.LoRa.InvertIQ == LORA_IQ_INVERTED )
+            {
+                // RegIqPolaritySetup = @address 0x0736
+                SX126xWriteRegister( 0x0736, SX126xReadRegister( 0x0736 ) & ~( 1 << 2 ) );
+            }
+            else
+            {
+                // RegIqPolaritySetup @address 0x0736
+                SX126xWriteRegister( 0x0736, SX126xReadRegister( 0x0736 ) | ( 1 << 2 ) );
+            }
+            // WORKAROUND END
 
             // Timeout Max, Timeout handled directly in SetRx function
             RxTimeout = 0xFFFF;
@@ -769,7 +782,7 @@ void RadioSetTxConfig( RadioModems_t modem, int8_t power, uint32_t fdev,
             SX126x.ModulationParams.Params.LoRa.CodingRate= ( RadioLoRaCodingRates_t )coderate;
 
             if( ( ( bandwidth == 0 ) && ( ( datarate == 11 ) || ( datarate == 12 ) ) ) ||
-            ( ( bandwidth == 1 ) && ( datarate == 12 ) ) || (RadioSymbTime(Bandwidths[bandwidth], coderate) >= 16.38) )
+            ( ( bandwidth == 1 ) && ( datarate == 12 ) ) || (RadioSymbTime(Bandwidths[bandwidth], datarate) >= 16.38) )
             {
                 SX126x.ModulationParams.Params.LoRa.LowDatarateOptimize = 0x01;
             }
@@ -808,6 +821,20 @@ void RadioSetTxConfig( RadioModems_t modem, int8_t power, uint32_t fdev,
             SX126xSetPacketParams( &SX126x.PacketParams );
             break;
     }
+
+    // WORKAROUND - Modulation Quality with 500 kHz LoRa? Bandwidth, see DS_SX1261-2_V1.2 datasheet chapter 15.1
+    if( ( modem == MODEM_LORA ) && ( SX126x.ModulationParams.Params.LoRa.Bandwidth == LORA_BW_500 ) )
+    {
+        // RegTxModulation = @address 0x0889
+        SX126xWriteRegister( 0x0889, SX126xReadRegister( 0x0889 ) & ~( 1 << 2 ) );
+    }
+    else
+    {
+        // RegTxModulation = @address 0x0889
+        SX126xWriteRegister( 0x0889, SX126xReadRegister( 0x0889 ) | ( 1 << 2 ) );
+    }
+    // WORKAROUND END
+
     SX126xSetRfTxPower( power );
     TxTimeout = timeout;
 }
@@ -1135,7 +1162,6 @@ void RadioIrqProcess( void )
     {
         BoardDisableIrq( );
         IrqFired = false;
-        BoardEnableIrq( );
 
         uint16_t irqRegs = SX126xGetIrqStatus( );
         SX126xClearIrqStatus( IRQ_RADIO_ALL );
@@ -1156,6 +1182,15 @@ void RadioIrqProcess( void )
             uint8_t size;
 
             TimerStop( &RxTimeoutTimer );
+            if( RxContinuous == false )
+            {
+                // WORKAROUND - Implicit Header Mode Timeout Behavior, see DS_SX1261-2_V1.2 datasheet chapter 15.3
+                // RegRtcControl = @address 0x0902
+                SX126xWriteRegister( 0x0902, 0x00 );
+                // RegEventMask = @address 0x0944
+                SX126xWriteRegister( 0x0944, SX126xReadRegister( 0x0944 ) | ( 1 << 1 ) );
+                // WORKAROUND END
+            }
             SX126xGetPayload( RadioRxPayload, &size , 255 );
             SX126xGetPacketStatus( &RadioPktStatus );
             if( ( RadioEvents != NULL ) && ( RadioEvents->RxDone != NULL ) && ( irqRegs & IRQ_CRC_ERROR ) != IRQ_CRC_ERROR)
@@ -1227,5 +1262,7 @@ void RadioIrqProcess( void )
                 RadioEvents->RxTimeout( );
             }
         }
+        
+        BoardEnableIrq( );
     }
 }

@@ -41,6 +41,7 @@ static uint8_t gGatewayID[3] ={0};
 static uint8_t g_beacon_retry_times = 0;
 
 static uint32_t g_ack_index = 0;
+static uint8_t g_join_retry_times = 0;
 static uint8_t g_data_send_nbtrials = 0;
 static int8_t g_data_send_msg_type = -1;
 #ifdef CONFIG_LINKWAN
@@ -222,7 +223,7 @@ static void mcps_confirm(McpsConfirm_t *mcpsConfirm)
                 mibReq.Param.freqband = get_next_freqband();
                 LoRaMacMibSetRequestConfirm(&mibReq);
 #endif  
-            }
+            }           
         }
 #endif         
     }
@@ -309,6 +310,7 @@ static void mlme_confirm( MlmeConfirm_t *mlmeConfirm )
         case MLME_JOIN: {
             if (mlmeConfirm->Status == LORAMAC_EVENT_INFO_STATUS_OK) {
                 // Status is OK, node has joined the network
+                g_join_retry_times = 0;
                 g_lwan_device_state = DEVICE_STATE_JOINED;
                 lwan_dev_status_set(DEVICE_STATUS_JOIN_PASS);
 #ifdef CONFIG_LINKWAN_AT
@@ -344,15 +346,25 @@ static void mlme_confirm( MlmeConfirm_t *mlmeConfirm )
                         rejoin_delay = generate_rejoin_delay();
                     }
                 }
-#else
-#ifdef CONFIG_LINKWAN_AT                          
-                PRINTF_AT("%s:FAIL\r\n", LORA_AT_CJOIN);
-#endif          
-                rejoin_delay = generate_rejoin_delay();
-#endif    
                 TimerSetValue(&TxNextPacketTimer, rejoin_delay);
                 TimerStart(&TxNextPacketTimer);
                 rejoin_flag = false;
+#else         
+                g_join_retry_times++;
+                if(g_join_retry_times>=g_lwan_dev_config_p->join_settings.join_trials) {
+#ifdef CONFIG_LINKWAN_AT                          
+                    PRINTF_AT("%s:FAIL\r\n", LORA_AT_CJOIN);
+#endif 
+                    g_join_retry_times = 0;
+                    g_lwan_device_state = DEVICE_STATE_SLEEP;
+                } else {
+                    rejoin_delay = generate_rejoin_delay();
+                    
+                    TimerSetValue(&TxNextPacketTimer, rejoin_delay);
+                    TimerStart(&TxNextPacketTimer);
+                    rejoin_flag = false;
+                }
+#endif                   
             }
             break;
         }
@@ -570,13 +582,13 @@ void lora_init(LoRaMainCallback_t *callbacks)
 void lora_fsm( void )
 {
     while (1) {
-#ifdef CONFIG_LINKWAN_AT
-        linkwan_at_process();
-#endif
         if (Radio.IrqProcess != NULL) {
             Radio.IrqProcess();
         }
         
+#ifdef CONFIG_LINKWAN_AT
+        linkwan_at_process();
+#endif        
         switch (g_lwan_device_state) {
             case DEVICE_STATE_INIT: { 
                 LoRaMacPrimitives.MacMcpsConfirm = mcps_confirm;
@@ -678,7 +690,7 @@ void lora_fsm( void )
                         mlmeReq.Req.Join.NbTrials = g_lwan_dev_config_p->join_settings.join_trials;
                     }
 #else
-                    mlmeReq.Req.Join.NbTrials = g_lwan_dev_config_p->join_settings.join_trials;
+                    mlmeReq.Req.Join.NbTrials = 1;
 #endif
 
                     if (next_tx == true && rejoin_flag == true) {

@@ -512,6 +512,7 @@ uint32_t HW_Get_MFT_Baud(void)
 
 void HW_Reset(int mode)
 {
+    SX126xReset( );
     if (mode == 0) {
 	    CySoftwareReset();
     } else if (mode == 1) {
