@@ -27,6 +27,10 @@ static void sys_start(void)
     application_start();
 }
 
+void SysTick_IRQ(void)
+{
+}
+
 int main(void)
 {
     CyGlobalIntEnable; /* Enable global interrupts. */
